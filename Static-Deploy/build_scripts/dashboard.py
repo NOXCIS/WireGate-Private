@@ -40,7 +40,7 @@ from Utilities import (
 
 
 #Import Enviorment
-DASHBOARD_VERSION = 'chimera'
+DASHBOARD_VERSION = 'chimera-beta-v0.1'
 DASHBOARD_MODE = None
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
 DB_PATH = os.path.join(CONFIGURATION_PATH, 'db')
