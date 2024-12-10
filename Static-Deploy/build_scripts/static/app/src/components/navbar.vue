@@ -56,13 +56,17 @@ export default {
 	>
 		<nav id="sidebarMenu" class=" bg-body-tertiary sidebar border h-100 rounded-3 shadow overflow-y-scroll" >
 			<div class="sidebar-sticky ">
-				<div class="text-white text-center m-0 py-3 mb-3 btn-brand">
-					<h5 class="dashboardNavBarLogo">
-						WireGate
+				<div class="text-white m-0 py-3 mb-3 nav-brand d-flex flex-wrap align-items-center justify-content-between">
+				<div class="position-relative">
+					<h5 class="dashboardNavBarLogo m-0">
+					WireGate
 					</h5>
-					<small class="ms-auto" v-if="getActiveCrossServer !== undefined">
-						<i class="bi bi-hdd-rack-fill me-2"></i>{{getActiveCrossServer.host}}
-					</small>
+					<div class="text-xs opacity-75 mb-1" style="padding-left: 70px;">Dashboard</div>
+				</div>
+				<small class="d-inline-flex align-items-center" v-if="getActiveCrossServer !== undefined">
+					<i class="bi bi-hdd-rack-fill me-2"></i>
+					<span class="text-truncate">{{getActiveCrossServer.host}}</span>
+				</small>
 				</div>
 				<ul class="nav flex-column px-2">
 					<li class="nav-item">

@@ -99,6 +99,27 @@
     inherits: false;
 }
 
+@property --brandColor6 {
+    syntax: '<color>';
+    initial-value: #150044;
+    inherits: false;
+}
+
+@property --brandColor7 {
+    syntax: '<color>';
+    initial-value: #002e00;
+    inherits: false;
+}
+
+.nav-brand {
+        /*background: rgb(23,139,255);*/
+        background: linear-gradient(var(--degree), var(--brandColor6) var(--distance2), var(--brandColor7) 100%) !important;
+        border: 0 !important;
+        transition: --brandColor1 1s, --brandColor2 1s, --distance2 0.5s !important;
+}
+
+
+
 @property --distance2{
     syntax: '<percentage>';
     initial-value: 0%;
@@ -113,7 +134,7 @@
 
 .dashboardNavBarLogo {
     display: flex;
-    align-items: center;
+    align-items: normal;
     -webkit-text-fill-color: whitesmoke;
     font-size: 1.9em;
     position: relative;
@@ -327,13 +348,20 @@
     background-color: #121212 !important;  /* Darker gray background */
     border: 1px solid #d5d5d553 !important;
     color: #ffffff;
-  }
+}
   
+[data-bs-theme="light"] .script-box-active {
+    background-color: #121212 !important;  /* Darker gray background */
+    border: 1px solid #d5d5d553 !important;
+    color: #ffffff;
+}
 
-  .script-box {
+
+
+.script-box {
 
     color: #ffffff4e;
-  }  
+}  
 
 
   

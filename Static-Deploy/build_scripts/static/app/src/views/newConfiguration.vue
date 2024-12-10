@@ -816,7 +816,7 @@ mounted() {
   <i class="bi bi-circle me-2" v-else></i>
   <strong class="d-flex align-items-center">
     <img 
-      src="https://gitlab.torproject.org/tpo/web/styleguide/-/raw/d857504c03c6e3d04b427a49a6c5eb0383cfd25c/assets/static/images/tor-logo/white.svg"
+      src="/img/tor.svg"
       class="me-2"
       alt="Tor Logo"
       style="width: 30px; height: 20px;"

@@ -225,69 +225,69 @@ watch(data, () => {
 
 								</div>
 								<div v-for="key in ['PreUp', 'PreDown', 'PostUp', 'PostDown']" :key="key">
-    <label :for="'configuration_' + key" class="form-label">
-      <small class="text-muted">
-        <LocaleText :t="key"></LocaleText>
-      </small>
-    </label>
-    <div class="d-flex gap-2 align-items-center">
-      <input 
-        type="text" 
-        class="form-control form-control-sm rounded-3"
-        :disabled="saving"
-        v-model="data[key]"
-        :id="'configuration_' + key"
-      >
-      <button
-        :class="scriptContents[key] ? 'btn-outline-warning' : 'bg-primary-subtle border-primary-subtle btn-outline-secondary'"
-        class="btn btn-sm"
-        @click="viewScript(key)"
-        v-if="data[key]"
-      >
-        <i class="bi" :class="scriptContents[key] ? 'bi-x-lg' : 'bi-file-text'"></i>
-      </button>
-    </div>
-    <!-- Script content viewer/editor -->
-    <div v-if="scriptContents[key]" class="mt-2 border rounded p-2">
-      <div v-for="(content, path) in scriptContents[key].contents" :key="path">
-        <div class="d-flex justify-content-between align-items-center">
-          <small class="text-muted">{{ path }}</small>
-          <div class="btn-group">
-            <button
-              v-if="!editMode[path]"
-              class="bg-primary-subtle border-primary-subtle btn btn-sm btn-outline-secondary"
-              @click="enableEditMode(path, content)"
-            >
-              <i class="bi bi-pencil"></i>
-            </button>
-            <button
-              v-else
-              class="btn btn-sm btn-outline-primary"
-              @click="saveScript(key, path, editedContent[path])"
-            >
-              <i class="bi bi-save"></i>
-            </button>
-            <button
-              v-if="editMode[path]"
-              class="btn btn-sm btn-outline-secondary"
-              @click="cancelEdit(path)"
-            >
-              <i class="bi bi-x-lg"></i>
-            </button>
-          </div>
-        </div>
-        <div class="script-box mt-1">
-          <textarea
-            v-if="editMode[path]"
-            class="script-box-active form-control form-control-sm font-monospace resizable-textarea"
-            v-model="editedContent[path]"
-            rows="10"
-          ></textarea>
-          <pre v-else class="mb-0 resizable-preview"><code>{{ content }}</code></pre>
-        </div>
-      </div>
-    </div>
-  </div>
+									<label :for="'configuration_' + key" class="form-label">
+									<small class="text-muted">
+										<LocaleText :t="key"></LocaleText>
+									</small>
+									</label>
+									<div class="d-flex gap-2 align-items-center">
+									<input 
+										type="text" 
+										class="form-control form-control-sm rounded-3"
+										:disabled="saving"
+										v-model="data[key]"
+										:id="'configuration_' + key"
+									>
+									<button
+										:class="scriptContents[key] ? 'btn-warning' : 'bg-primary-subtle border-primary-subtle btn-outline-secondary'"
+										class="btn btn-sm text-primary-subtle"
+										@click="viewScript(key)"
+										v-if="data[key]"
+									>
+										<i class="bi" :class="scriptContents[key] ? 'bi-x-lg' : 'bi-file-text'"></i>
+									</button>
+									</div>
+									<!-- Script content viewer/editor -->
+									<div v-if="scriptContents[key]" class="mt-2 border rounded p-2">
+									<div v-for="(content, path) in scriptContents[key].contents" :key="path">
+										<div class="d-flex justify-content-between align-items-center">
+										<small class="text-muted">{{ path }}</small>
+										<div class="btn-group">
+											<button
+											v-if="!editMode[path]"
+											class="bg-primary-subtle border-primary-subtle btn btn-sm btn-outline-secondary text-primary-subtle"
+											@click="enableEditMode(path, content)"
+											>
+											<i class="bi bi-pencil"></i>
+											</button>
+											<button
+											v-else
+											class="btn btn-sm btn-outline-primary"
+											@click="saveScript(key, path, editedContent[path])"
+											>
+											<i class="bi bi-save"></i>
+											</button>
+											<button
+											v-if="editMode[path]"
+											class="btn btn-sm btn-outline-secondary"
+											@click="cancelEdit(path)"
+											>
+											<i class="bi bi-x-lg"></i>
+											</button>
+										</div>
+										</div>
+										<div class="script-box mt-1">
+										<textarea
+											v-if="editMode[path]"
+											class="script-box-active form-control form-control-sm font-monospace resizable-textarea"
+											v-model="editedContent[path]"
+											rows="10"
+										></textarea>
+										<pre v-else class="mb-0 resizable-preview"><code>{{ content }}</code></pre>
+										</div>
+									</div>
+									</div>
+								</div>
 
 								<div class="d-flex align-items-center gap-2 mt-4">
 									<button class="btn bg-secondary-subtle border-secondary-subtle text-secondary-emphasis rounded-3 shadow ms-auto"
