@@ -457,6 +457,15 @@
     color: #ffffff !important;
 }
 
+[data-bs-theme="light"] .text-primary-subtle-btn:focus {
+    color: #200035 !important;
+}
+
+[data-bs-theme="light"] .text-primary-subtle-btn {
+    color: #ffffff !important;
+}
+
+
 [data-bs-theme="dark"] .nav-link {
     color: #ffffff  !important;
 }

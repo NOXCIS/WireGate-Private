@@ -1,34 +1,27 @@
-
-import random
-import shutil
-import sqlite3
-import configparser
-import bcrypt
-import psutil
-import pyotp
-import hashlib
+import random, shutil, sqlite3, configparser
+import bcrypt, psutil, pyotp, hashlib, secrets
+import os, io, time, subprocess, uuid, threading
+import tempfile, py7zr
 import ipaddress
 import json
-import os
-import io
-import zipfile
-import secrets
-import subprocess
-import time
 import re
-import uuid
-import threading
 import logging
+
+
 import waitress 
+
+
+
 from logging.handlers import RotatingFileHandler
 from time import strftime
 from datetime import datetime, timedelta
 from typing import Any, List
-from flask import Flask, request, render_template, session, g, jsonify, send_file
+from flask import Flask, request, render_template, make_response, session, g, jsonify, send_file
 from json import JSONEncoder
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
+from werkzeug.utils import secure_filename
 from Utilities import (
     RegexMatch, GetRemoteEndpoint, StringToBoolean, 
     ValidateIPAddressesWithRange, ValidateIPAddresses, ValidateDNSAddress,
@@ -40,7 +33,7 @@ from Utilities import (
 
 
 #Import Enviorment
-DASHBOARD_VERSION = 'vidar'
+DASHBOARD_VERSION = 'jiaotu'
 DASHBOARD_MODE = None
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
 DB_PATH = os.path.join(CONFIGURATION_PATH, 'db')
@@ -49,10 +42,26 @@ if not os.path.isdir(DB_PATH):
 DASHBOARD_CONF = os.path.join(CONFIGURATION_PATH, 'db', 'wg-dashboard.ini')
 WG_CONF_PATH = None
 UPDATE = None
+
+
+# Folder to save uploaded files
+UPLOAD_FOLDER = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), 'Downloads')
+)
+
 app = Flask("WGDashboard", template_folder=os.path.abspath("./static/app/dist"))
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
 app.secret_key = secrets.token_urlsafe(420)
 
+
+
+
+
+
+
+# App config
 
 
 wgd_config_path = os.environ.get('WGD_CONF_PATH') or "/etc/wireguard"
@@ -65,6 +74,8 @@ wgd_global_dns = os.environ.get('WGD_DNS') or "1.1.1.1"
 wgd_peer_endpoint_allowed_ip = os.environ.get('WGD_PEER_ENDPOINT_ALLOWED_IP') or "0.0.0.0/0, ::/0"
 wgd_keep_alive = os.environ.get('WGD_KEEP_ALIVE') or "21"
 wgd_mtu = os.environ.get('WGD_MTU') or "1420"
+
+
 
 
 
@@ -101,6 +112,38 @@ def ResponseObject(status=True, message=None, data=None) -> Flask.response_class
     })
     response.content_type = "application/json"
     return response
+
+def get_backup_paths(config_name: str, backup_timestamp: str = None) -> dict:
+    """
+    Get organized backup file paths for a configuration
+    Args:
+        config_name: Name of the WireGuard configuration
+        backup_timestamp: Optional timestamp for specific backup
+    Returns:
+        Dictionary containing backup paths
+    """
+    # Get base backup directory
+    backup_dir = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')
+    
+    # Create config-specific directory
+    config_backup_dir = os.path.join(backup_dir, config_name)
+    os.makedirs(config_backup_dir, exist_ok=True)
+
+    if backup_timestamp:
+        return {
+            'base_dir': backup_dir,
+            'config_dir': config_backup_dir,
+            'conf_file': os.path.join(config_backup_dir, f'{config_name}_{backup_timestamp}.conf'),
+            'sql_file': os.path.join(config_backup_dir, f'{config_name}_{backup_timestamp}.sql'),
+            'iptables_file': os.path.join(config_backup_dir, f'{config_name}_{backup_timestamp}_iptables.json')
+        }
+    return {
+        'base_dir': backup_dir,
+        'config_dir': config_backup_dir
+    }
+
+def _strToBool(value: str) -> bool:
+        return value.lower() in ("yes", "true", "t", "1", 1)
 
 """
 Log Class
@@ -480,6 +523,165 @@ class PeerShareLinks:
 """
 WireGuard Configuration
 """ 
+
+
+class ArchiveUtils:
+    """Handles 7z archive operations with integrity checking"""
+    
+    @staticmethod
+    def calculate_checksums(files_dict: dict) -> tuple[dict, str]:
+        """
+        Calculate SHA256 checksums for all files and a final combined checksum
+        Returns (file_checksums, combined_checksum)
+        """
+        try:
+            # Calculate individual file checksums
+            checksums = {}
+            for filename, content in sorted(files_dict.items()):  # Sort for consistent ordering
+                if isinstance(content, bytes):
+                    checksums[filename] = hashlib.sha256(content).hexdigest()
+                elif isinstance(content, str):
+                    checksums[filename] = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            
+            # Calculate combined checksum
+            combined = hashlib.sha256()
+            for filename, checksum in sorted(checksums.items()):  # Sort again for consistency
+                combined.update(f"{filename}:{checksum}".encode('utf-8'))
+            
+            return checksums, combined.hexdigest()
+            
+        except Exception as e:
+            print(f"Error calculating checksums: {str(e)}")
+            raise
+
+    @staticmethod
+    def create_archive(files_dict: dict) -> tuple[bytes, dict, str]:
+        """
+        Create a 7z archive with manifest and checksums
+        Returns (archive_bytes, file_checksums, combined_checksum)
+        """
+        try:
+            # Calculate checksums
+            print("Calculating checksums...")
+            file_checksums, combined_checksum = ArchiveUtils.calculate_checksums(files_dict)
+            
+            # Create manifest
+            manifest = {
+                'file_checksums': file_checksums,
+                'combined_checksum': combined_checksum,
+                'timestamp': datetime.now().isoformat(),
+                'version': DashboardConfig.GetConfig("Server", "version")[1]
+            }
+            
+            print(f"Combined checksum: {combined_checksum}")
+            
+            # Add manifest to files
+            files_dict['wiregate_manifest.json'] = json.dumps(manifest, indent=2)
+            
+            print("Creating 7z archive in memory...")
+            # Create archive in memory
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Write files
+                for filename, content in files_dict.items():
+                    file_path = os.path.join(temp_dir, filename)
+                    # Create directories for nested paths
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                    
+                    if isinstance(content, str):
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(content)
+                    else:
+                        with open(file_path, 'wb') as f:
+                            f.write(content)
+                
+                # Create 7z archive
+                archive_buffer = io.BytesIO()
+                with py7zr.SevenZipFile(archive_buffer, 'w') as archive:
+                    archive.writeall(temp_dir, arcname='.')
+                
+                archive_data = archive_buffer.getvalue()
+                print(f"Archive created successfully, size: {len(archive_data)} bytes")
+                
+                return archive_data, file_checksums, combined_checksum
+            
+        except Exception as e:
+            print(f"Error creating archive: {str(e)}, {type(e)}")
+            raise
+
+    @staticmethod
+    def verify_archive(archive_data: bytes) -> tuple[bool, str, dict]:
+        """
+        Verify 7z archive integrity using checksums
+        Returns (is_valid, error_message, extracted_files)
+        """
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Write archive to temp file
+                archive_path = os.path.join(temp_dir, 'archive.7z')
+                with open(archive_path, 'wb') as f:
+                    f.write(archive_data)
+                
+                # Extract archive
+                extracted_files = {}
+                with py7zr.SevenZipFile(archive_path, 'r') as archive:
+                    archive.extractall(temp_dir)
+                    
+                    # Read all extracted files
+                    for root, _, files in os.walk(temp_dir):
+                        for filename in files:
+                            if filename == 'archive.7z':
+                                continue
+                            file_path = os.path.join(root, filename)
+                            rel_path = os.path.relpath(file_path, temp_dir)
+                            with open(file_path, 'rb') as f:
+                                extracted_files[rel_path] = f.read()
+            
+            # Read manifest
+            if 'wiregate_manifest.json' not in extracted_files:
+                return False, "No manifest found in archive", {}
+                
+            try:
+                manifest = json.loads(extracted_files['wiregate_manifest.json'].decode('utf-8'))
+            except json.JSONDecodeError as e:
+                return False, f"Invalid manifest format: {str(e)}", {}
+                
+            if 'file_checksums' not in manifest or 'combined_checksum' not in manifest:
+                return False, "Checksums missing from manifest", {}
+            
+            # Verify individual file checksums
+            print("Verifying individual file checksums...")
+            current_checksums = {}
+            for filename, content in extracted_files.items():
+                if filename == 'wiregate_manifest.json':
+                    continue
+                    
+                if filename not in manifest['file_checksums']:
+                    return False, f"No checksum found for file: {filename}", {}
+                    
+                calculated_hash = hashlib.sha256(content).hexdigest()
+                if calculated_hash != manifest['file_checksums'][filename]:
+                    return False, f"Checksum mismatch for file: {filename}", {}
+                current_checksums[filename] = calculated_hash
+            
+            # Verify combined checksum
+            print("Verifying combined checksum...")
+            combined = hashlib.sha256()
+            for filename, checksum in sorted(current_checksums.items()):
+                combined.update(f"{filename}:{checksum}".encode('utf-8'))
+            
+            if combined.hexdigest() != manifest['combined_checksum']:
+                return False, "Combined checksum verification failed", {}
+            
+            print("All checksums verified successfully")
+            
+            # Remove manifest from extracted files
+            del extracted_files['wiregate_manifest.json']
+            return True, "", extracted_files
+            
+        except Exception as e:
+            print(f"Error verifying archive: {str(e)}, {type(e)}")
+            return False, f"Error verifying archive: {str(e)}", {}
+
 class Configuration:
     class InvalidConfigurationFileException(Exception):
         def __init__(self, m):
@@ -625,16 +827,25 @@ class Configuration:
             
         # Get WireGuard config directory
         wg_dir = DashboardConfig.GetConfig("Server", "iptable_rules_path")[1]
+        # Normalize the config directory path to remove any trailing slashes
+        wg_dir = os.path.normpath(wg_dir)
         
         if script_path.startswith('/'):
             # Absolute path
             return script_path
-        elif script_path.startswith('./'):
-            # Relative path from WireGuard directory
-            return os.path.join(wg_dir, script_path[2:])
         else:
-            # Assume relative to WireGuard directory
-            return os.path.join(wg_dir, script_path)
+            # Remove any leading './' from both wg_dir and script_path
+            clean_wg_dir = wg_dir.strip('./')
+            clean_script_path = script_path.strip('./')
+            
+            # Combine and normalize the path to remove any duplicates
+            full_path = os.path.normpath(os.path.join(clean_wg_dir, clean_script_path))
+            
+            # If the original path was relative (started with ./), preserve that
+            if script_path.startswith('./') or wg_dir.startswith('./'):
+                full_path = './' + full_path
+                
+            return full_path
 
     def getPostUp(self):
         """Extract and resolve PostUp script path"""
@@ -649,13 +860,13 @@ class Configuration:
             cmd = cmd.strip()
             if cmd.endswith('.sh') or cmd.endswith('.bash'):
                 # If the command is just a script path
-                script_paths.append(self.get_script_path(cmd))
+                script_paths.append(cmd)
             else:
                 # Look for script paths in command parts
                 parts = cmd.split()
                 for part in parts:
                     if part.endswith('.sh') or part.endswith('.bash'):
-                        script_paths.append(self.get_script_path(part))
+                        script_paths.append(part)
                         
         return [p for p in script_paths if p is not None]
 
@@ -670,12 +881,12 @@ class Configuration:
         for cmd in commands:
             cmd = cmd.strip()
             if cmd.endswith('.sh') or cmd.endswith('.bash'):
-                script_paths.append(self.get_script_path(cmd))
+                script_paths.append(cmd)
             else:
                 parts = cmd.split()
                 for part in parts:
                     if part.endswith('.sh') or part.endswith('.bash'):
-                        script_paths.append(self.get_script_path(part))
+                        script_paths.append(part)
                         
         return [p for p in script_paths if p is not None]
 
@@ -690,12 +901,12 @@ class Configuration:
         for cmd in commands:
             cmd = cmd.strip()
             if cmd.endswith('.sh') or cmd.endswith('.bash'):
-                script_paths.append(self.get_script_path(cmd))
+                script_paths.append(cmd)
             else:
                 parts = cmd.split()
                 for part in parts:
                     if part.endswith('.sh') or part.endswith('.bash'):
-                        script_paths.append(self.get_script_path(part))
+                        script_paths.append(part)
                         
         return [p for p in script_paths if p is not None]
 
@@ -710,12 +921,12 @@ class Configuration:
         for cmd in commands:
             cmd = cmd.strip()
             if cmd.endswith('.sh') or cmd.endswith('.bash'):
-                script_paths.append(self.get_script_path(cmd))
+                script_paths.append(cmd)
             else:
                 parts = cmd.split()
                 for part in parts:
                     if part.endswith('.sh') or part.endswith('.bash'):
-                        script_paths.append(self.get_script_path(part))
+                        script_paths.append(part)
                         
         return [p for p in script_paths if p is not None]
         
@@ -777,17 +988,34 @@ class Configuration:
         if dbName not in existingTables:
             sqlUpdate(
                 """
-                CREATE TABLE '%s'(
-                    id VARCHAR NOT NULL, private_key VARCHAR NULL, DNS VARCHAR NULL, 
-                    endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-                    total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                    status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                    keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
+                CREATE TABLE IF NOT EXISTS '%s'(
+                    id VARCHAR NOT NULL, 
+                    private_key VARCHAR NULL, 
+                    DNS VARCHAR NULL, 
+                    endpoint_allowed_ip VARCHAR NULL, 
+                    name VARCHAR NULL, 
+                    total_receive FLOAT NULL, 
+                    total_sent FLOAT NULL, 
+                    total_data FLOAT NULL, 
+                    endpoint VARCHAR NULL, 
+                    status VARCHAR NULL, 
+                    latest_handshake VARCHAR NULL, 
+                    allowed_ip VARCHAR NULL,  
+                    cumu_receive FLOAT NULL, 
+                    cumu_sent FLOAT NULL, 
+                    cumu_data FLOAT NULL, 
+                    mtu INT NULL, 
+                    keepalive INT NULL, 
+                    remote_endpoint VARCHAR NULL, 
+                    preshared_key VARCHAR NULL,
+                    address_v4 VARCHAR NULL,  
+                    address_v6 VARCHAR NULL,  
                     PRIMARY KEY (id)
                 )
                 """ % dbName
             )
+
+    # Create other tables with similar updates...
 
         if f'{dbName}_restrict_access' not in existingTables:
             sqlUpdate(
@@ -799,6 +1027,8 @@ class Configuration:
                     status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
                     cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
                     keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
+                    address_v4 VARCHAR NULL,  
+                    address_v6 VARCHAR NULL, 
                     PRIMARY KEY (id)
                 )
                 """ % dbName
@@ -823,11 +1053,13 @@ class Configuration:
                     status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
                     cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
                     keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
+                    address_v4 VARCHAR NULL,  
+                    address_v6 VARCHAR NULL, 
                     PRIMARY KEY (id)
                 )
                 """ % dbName
             )
-            
+        
     def __dumpDatabase(self):
         for line in sqldb.iterdump():
             if (line.startswith(f"INSERT INTO \"{self.Name}\"") 
@@ -842,10 +1074,35 @@ class Configuration:
         self.__createDatabase()
         if not os.path.exists(sqlFilePath):
             return False
+            
         with open(sqlFilePath, 'r') as f:
             for l in f.readlines():
                 l = l.rstrip("\n")
                 if len(l) > 0:
+                    # Split addresses into v4 and v6 parts before insert
+                    if "INSERT INTO" in l:
+                        try:
+                            # Parse out address values
+                            addresses = re.search(r"Address\s*=\s*'([^']*)'", l)
+                            if addresses:
+                                addr_parts = addresses.group(1).split(',')
+                                addr_v4 = []
+                                addr_v6 = []
+                                for addr in addr_parts:
+                                    addr = addr.strip()
+                                    if ':' in addr:  # IPv6
+                                        addr_v6.append(addr)
+                                    else:  # IPv4
+                                        addr_v4.append(addr)
+                                
+                                # Replace original address with split version
+                                l = l.replace(
+                                    f"Address = '{addresses.group(1)}'",
+                                    f"address_v4 = '{','.join(addr_v4)}', address_v6 = '{','.join(addr_v6)}'"
+                                )
+                        except Exception as e:
+                            print(f"Error parsing addresses: {e}")
+                            
                     sqlUpdate(l)
         return True
         
@@ -955,6 +1212,17 @@ class Configuration:
         try:
             # First, handle database updates and wg commands
             for i in peers:
+                # Split addresses into v4 and v6
+                addr_v4 = []
+                addr_v6 = []
+                if 'allowed_ip' in i:
+                    for addr in i['allowed_ip'].split(','):
+                        addr = addr.strip()
+                        if ':' in addr:  # IPv6
+                            addr_v6.append(addr)
+                        else:  # IPv4
+                            addr_v4.append(addr)
+
                 newPeer = {
                     "id": i['id'],
                     "private_key": i['private_key'],
@@ -975,7 +1243,9 @@ class Configuration:
                     "mtu": i['mtu'],
                     "keepalive": i['keepalive'],
                     "remote_endpoint": DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                    "preshared_key": i["preshared_key"]
+                    "preshared_key": i["preshared_key"],
+                    "address_v4": ','.join(addr_v4) if addr_v4 else None,
+                    "address_v6": ','.join(addr_v6) if addr_v6 else None
                 }
                 
                 sqlUpdate(
@@ -983,9 +1253,8 @@ class Configuration:
                     INSERT INTO '%s'
                     VALUES (:id, :private_key, :DNS, :endpoint_allowed_ip, :name, :total_receive, :total_sent,
                     :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent,
-                    :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
-                    """ % self.Name
-                    , newPeer)
+                    :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key, :address_v4, :address_v6);
+                    """ % self.Name, newPeer)
 
             # Handle wg commands and config file updates
             config_path = f"/etc/wireguard/{self.Name}.conf"
@@ -1460,50 +1729,68 @@ class Configuration:
         }
     
     def backupConfigurationFile(self):
-        """Enhanced backup method that includes iptables scripts"""
+        """Enhanced backup method that includes all iptables scripts with organized directory structure"""
         try:
-            backup_dir = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')
-            if not os.path.exists(backup_dir):
-                os.mkdir(backup_dir)
-            
             # Generate timestamp for backup files
             time_str = datetime.now().strftime("%Y%m%d%H%M%S")
             
+            # Get organized backup paths
+            backup_paths = get_backup_paths(self.Name, time_str)
+            
             # Backup main configuration file
-            conf_backup_path = os.path.join(backup_dir, f'{self.Name}_{time_str}.conf')
-            shutil.copy(self.configPath, conf_backup_path)
+            shutil.copy(self.configPath, backup_paths['conf_file'])
             
             # Backup database
-            with open(os.path.join(backup_dir, f'{self.Name}_{time_str}.sql'), 'w+') as f:
+            with open(backup_paths['sql_file'], 'w+') as f:
                 for l in self.__dumpDatabase():
                     f.write(l + "\n")
                     
-            # Backup iptables scripts if they exist
+            # Backup all iptables scripts if they exist
             scripts_backup = {}
-            for script_type in ['up', 'down']:
-                script_path = os.path.join("./iptable-rules", f"{self.Name}-{script_type}.sh")
-                if os.path.exists(script_path):
-                    with open(script_path, 'r') as f:
-                        scripts_backup[f"{script_type}_script"] = f.read()
+            script_types = {
+                'preup': ('preup', self.PreUp),
+                'postup': ('postup', self.PostUp),
+                'predown': ('predown', self.PreDown),
+                'postdown': ('postdown', self.PostDown)
+            }
+            
+            for script_key, (script_name, script_path) in script_types.items():
+                if script_path:
+                    script_file = os.path.join("./iptable-rules", f"{self.Name}-{script_name}.sh")
+                    if os.path.exists(script_file):
+                        with open(script_file, 'r') as f:
+                            scripts_backup[f"{script_key}_script"] = f.read()
             
             # Save iptables scripts content if any exist
             if scripts_backup:
-                scripts_backup_path = os.path.join(backup_dir, f'{self.Name}_{time_str}_iptables.json')
-                with open(scripts_backup_path, 'w') as f:
+                with open(backup_paths['iptables_file'], 'w') as f:
                     json.dump(scripts_backup, f, indent=2)
-                    
-            return True
+            
+            # Return success and backup details
+            return True, {
+                'filename': backup_paths['conf_file'],
+                'database': backup_paths['sql_file'],
+                'iptables': backup_paths['iptables_file'] if scripts_backup else None
+            }
         except Exception as e:
             print(f"[WGDashboard] Backup Error: {str(e)}")
-            return False
-
+            return False, None
+    
     def getBackups(self, databaseContent: bool = False) -> list[dict[str, str]]:
-        """Enhanced getBackups method that includes iptables scripts"""
+        """Enhanced getBackups method with organized directory structure"""
         backups = []
         
-        directory = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')
-        files = [(file, os.path.getctime(os.path.join(directory, file)))
-                for file in os.listdir(directory) if os.path.isfile(os.path.join(directory, file))]
+        # Get backup paths
+        backup_paths = get_backup_paths(self.Name)
+        
+        if not os.path.exists(backup_paths['config_dir']):
+            return backups
+        
+        # Get all files in the config backup directory
+        files = [(file, os.path.getctime(os.path.join(backup_paths['config_dir'], file)))
+                for file in os.listdir(backup_paths['config_dir']) 
+                if os.path.isfile(os.path.join(backup_paths['config_dir'], file))]
+        
         files.sort(key=lambda x: x[1], reverse=True)
         
         for f, ct in files:
@@ -1513,157 +1800,249 @@ class Configuration:
                 d = {
                     "filename": f,
                     "backupDate": date,
-                    "content": open(os.path.join(directory, f), 'r').read()
+                    "content": open(os.path.join(backup_paths['config_dir'], f), 'r').read()
                 }
                 
                 # Add database info if exists
                 sql_file = f.replace(".conf", ".sql")
-                if sql_file in list(os.listdir(directory)):
+                if os.path.exists(os.path.join(backup_paths['config_dir'], sql_file)):
                     d['database'] = True
                     if databaseContent:
-                        d['databaseContent'] = open(os.path.join(directory, sql_file), 'r').read()
+                        d['databaseContent'] = open(os.path.join(backup_paths['config_dir'], sql_file), 'r').read()
                         
                 # Add iptables scripts info if exists
                 iptables_file = f.replace(".conf", "_iptables.json")
-                if iptables_file in list(os.listdir(directory)):
+                if os.path.exists(os.path.join(backup_paths['config_dir'], iptables_file)):
                     d['iptables_scripts'] = True
                     if databaseContent:
-                        d['iptablesContent'] = open(os.path.join(directory, iptables_file), 'r').read()
+                        d['iptablesContent'] = open(os.path.join(backup_paths['config_dir'], iptables_file), 'r').read()
                         
                 backups.append(d)
         
         return backups
+
     
     def restoreBackup(self, backupFileName: str) -> bool:
-        backups = list(map(lambda x : x['filename'], self.getBackups()))
+        """Enhanced restore method with pre/post up/down scripts"""
+        backups = list(map(lambda x: x['filename'], self.getBackups()))
         if backupFileName not in backups:
             return False
+
+        # Backup current state before restore
         self.backupConfigurationFile()
         if self.Status:
             self.toggleConfiguration()
-        target = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup', backupFileName)
-        targetSQL = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup', backupFileName.replace(".conf", ".sql"))
-        if not os.path.exists(target):
+
+        # Get timestamp from backup filename
+        timestamp = backupFileName.split('_')[1].split('.')[0]
+        backup_paths = get_backup_paths(self.Name, timestamp)
+        if not os.path.exists(backup_paths['conf_file']):
             return False
-        targetContent = open(target, 'r').read()
+
+        # Restore configuration file
         try:
-            with open(os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], f'{self.Name}.conf'), 'w') as f:
+            with open(backup_paths['conf_file'], 'r') as f:
+                targetContent = f.read()
+            with open(self.configPath, 'w') as f:
                 f.write(targetContent)
-        except Exception as e:
+        except Exception:
             return False
+
+        # Parse and restore database
         self.__parseConfigurationFile()
         self.__dropDatabase()
-        self.__importDatabase(targetSQL)
+        self.__importDatabase(backup_paths['sql_file'])
         self.__initPeersList()
+
+        # Restore iptables scripts if they exist
+        if os.path.exists(backup_paths['iptables_file']):
+            try:
+                with open(backup_paths['iptables_file'], 'r') as f:
+                    scripts = json.load(f)
+                
+                # Direct mapping of script keys to filenames
+                script_files = {
+                    'preup_script': 'preup',
+                    'postup_script': 'postup',
+                    'predown_script': 'predown',
+                    'postdown_script': 'postdown'
+                }
+
+                rules_dir = "./iptable-rules"
+                os.makedirs(rules_dir, exist_ok=True)
+
+                # Process each script
+                for script_key, script_type in script_files.items():
+                    if script_key in scripts and scripts[script_key]:  # Check if script exists and is not empty
+                        script_path = os.path.join(rules_dir, f"{self.Name}-{script_type}.sh")
+                        print(f"Restoring {script_key} to {script_path}")  # Debug log
+                        
+                        with open(script_path, 'w') as f:
+                            f.write(scripts[script_key])
+                        os.chmod(script_path, 0o755)
+
+            except Exception as e:
+                print(f"Warning: Failed to restore iptables scripts: {e}")
+                # Continue execution even if script restoration fails
+                pass
+
         return True
-    
+
+
     def deleteBackup(self, backupFileName: str) -> bool:
-        backups = list(map(lambda x : x['filename'], self.getBackups()))
+        """Enhanced delete method with organized directory structure that handles uploaded backups"""
+        backups = list(map(lambda x: x['filename'], self.getBackups()))
         if backupFileName not in backups:
             return False
+            
         try:
-            os.remove(os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup', backupFileName))
+            # Get timestamp from backup filename
+            timestamp = backupFileName.split('_')[1].split('.')[0]
+            backup_paths = get_backup_paths(self.Name, timestamp)
+            
+            files_to_delete = [
+                # Regular backup files
+                backup_paths['conf_file'],
+                backup_paths['sql_file'],
+                backup_paths['iptables_file'],
+                
+                # Handle potential uploaded backup files
+                os.path.join(backup_paths['config_dir'], backupFileName),
+                os.path.join(backup_paths['config_dir'], backupFileName.replace('.conf', '.sql')),
+                os.path.join(backup_paths['config_dir'], backupFileName.replace('.conf', '_iptables.json'))
+            ]
+            
+            # Delete all existing files
+            for file_path in files_to_delete:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"[WGDashboard] Deleted backup file: {file_path}")
+            
+            # Clean up empty config directory
+            try:
+                if os.path.exists(backup_paths['config_dir']):
+                    if not os.listdir(backup_paths['config_dir']):
+                        os.rmdir(backup_paths['config_dir'])
+                        print(f"[WGDashboard] Removed empty backup directory: {backup_paths['config_dir']}")
+            except OSError as e:
+                # Directory not empty or other OS error, log but continue
+                print(f"[WGDashboard] Note: Could not remove backup directory: {str(e)}")
+                pass
+                
         except Exception as e:
+            print(f"[WGDashboard] Error deleting backup files: {str(e)}")
             return False
+        
         return True
-    
+
     def updateConfigurationSettings(self, newData: dict) -> tuple[bool, str]:
         if self.Status:
             self.toggleConfiguration()
         original = []
         dataChanged = False
         with open(os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], f'{self.Name}.conf'), 'r') as f:
-            original = [l.rstrip("\n") for l in f.readlines()]
-            allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort"]
+            original = f.readlines()
+            original = [l.rstrip("\n") for l in original]
+            allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPost", "PrivateKey"]
+            
+
             start = original.index("[Interface]")
-            try:
-                end = original.index("[Peer]")
-            except ValueError as e:
-                end = len(original)
-            new = ["[Interface]"]
-            peerFound = False
-            for line in range(start, end):
-                split = re.split(r'\s*=\s*', original[line], maxsplit=1)
+            for line in range(start+1, len(original)):
+                if original[line] == "[Peer]":
+                    break
+                split = re.split(r'\s*=\s*', original[line], 1)
                 if len(split) == 2:
-                    if split[0] not in allowEdit:
-                        new.append(original[line])
-            for key in allowEdit:
-                new.insert(1, f"{key} = {str(newData[key]).strip()}")
-            new.append("")
-            for line in range(end, len(original)):
-                new.append(original[line])            
-            self.backupConfigurationFile()
+                    key = split[0]
+                    value = split[1]
+                    if key in allowEdit and key in newData.keys() and value != newData[key]:
+                        split[1] = newData[key]
+                        original[line] = " = ".join(split)
+                        if isinstance(getattr(self, key), bool):
+                            setattr(self, key, _strToBool(newData[key]))
+                        else:
+                            setattr(self, key, str(newData[key]))
+                        dataChanged = True
+                    print(original[line])
+        if dataChanged:
+            
+            if not os.path.exists(os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')):
+                os.mkdir(os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup'))
+            shutil.copy(
+                os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], f'{self.Name}.conf'),
+                os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup', f'{self.Name}_{datetime.now().strftime("%Y%m%d%H%M%S")}.conf')
+            )
             with open(os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], f'{self.Name}.conf'), 'w') as f:
-                f.write("\n".join(new))
-                
+                f.write("\n".join(original))
+        
+        
         status, msg = self.toggleConfiguration()        
         if not status:
             return False, msg
         return True, ""
-    
+
     def deleteConfiguration(self):
-        if self.getStatus():
-            self.toggleConfiguration()
-        os.remove(self.configPath)
-        self.__dropDatabase()
-        return True
-    
-    def renameConfiguration(self, newConfigurationName) -> tuple[bool, str]:
-        if newConfigurationName in WireguardConfigurations.keys():
-            return False, "Configuration name already exist"
-        try:
             if self.getStatus():
                 self.toggleConfiguration()
-            self.__createDatabase(newConfigurationName)
-            sqlUpdate(f'INSERT INTO "{newConfigurationName}" SELECT * FROM "{self.Name}"')
-            sqlUpdate(f'INSERT INTO "{newConfigurationName}_restrict_access" SELECT * FROM "{self.Name}_restrict_access"')
-            sqlUpdate(f'INSERT INTO "{newConfigurationName}_deleted" SELECT * FROM "{self.Name}_deleted"')
-            sqlUpdate(f'INSERT INTO "{newConfigurationName}_transfer" SELECT * FROM "{self.Name}_transfer"')
-            AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
-            shutil.copy(
-                self.configPath,
-                os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], f'{newConfigurationName}.conf')
-            )
-            self.deleteConfiguration()
-        except Exception as e:
-            return False, str(e)
-        return True, None
-    
+            os.remove(self.configPath)
+            self.__dropDatabase()
+            return True
+        
+    def renameConfiguration(self, newConfigurationName) -> tuple[bool, str]:
+            if newConfigurationName in WireguardConfigurations.keys():
+                return False, "Configuration name already exist"
+            try:
+                if self.getStatus():
+                    self.toggleConfiguration()
+                self.__createDatabase(newConfigurationName)
+                sqlUpdate(f'INSERT INTO "{newConfigurationName}" SELECT * FROM "{self.Name}"')
+                sqlUpdate(f'INSERT INTO "{newConfigurationName}_restrict_access" SELECT * FROM "{self.Name}_restrict_access"')
+                sqlUpdate(f'INSERT INTO "{newConfigurationName}_deleted" SELECT * FROM "{self.Name}_deleted"')
+                sqlUpdate(f'INSERT INTO "{newConfigurationName}_transfer" SELECT * FROM "{self.Name}_transfer"')
+                AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
+                shutil.copy(
+                    self.configPath,
+                    os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], f'{newConfigurationName}.conf')
+                )
+                self.deleteConfiguration()
+            except Exception as e:
+                return False, str(e)
+            return True, None
+        
     def getAvailableIP(self, all: bool = False) -> tuple[bool, list[str]] | tuple[bool, None]:
-        if len(self.Address) < 0:
-            return False, None
-        address = self.Address.split(',')
-        existedAddress = []
-        availableAddress = []
-        for p in self.Peers:
-            if len(p.allowed_ip) > 0:
-                add = p.allowed_ip.split(',')
-                for i in add:
-                    a, c = i.split('/')
-                    try:
+            if len(self.Address) < 0:
+                return False, None
+            address = self.Address.split(',')
+            existedAddress = []
+            availableAddress = []
+            for p in self.Peers:
+                if len(p.allowed_ip) > 0:
+                    add = p.allowed_ip.split(',')
+                    for i in add:
+                        a, c = i.split('/')
+                        try:
+                            existedAddress.append(ipaddress.ip_address(a.replace(" ", "")))
+                        except ValueError as error:
+                            print(f"[WGDashboard] Error: {self.Name} peer {p.id} have invalid ip")
+            for p in self.getRestrictedPeersList():
+                if len(p.allowed_ip) > 0:
+                    add = p.allowed_ip.split(',')
+                    for i in add:
+                        a, c = i.split('/')
                         existedAddress.append(ipaddress.ip_address(a.replace(" ", "")))
-                    except ValueError as error:
-                        print(f"[WGDashboard] Error: {self.Name} peer {p.id} have invalid ip")
-        for p in self.getRestrictedPeersList():
-            if len(p.allowed_ip) > 0:
-                add = p.allowed_ip.split(',')
-                for i in add:
-                    a, c = i.split('/')
-                    existedAddress.append(ipaddress.ip_address(a.replace(" ", "")))
-        for i in address:
-            addressSplit, cidr = i.split('/')
-            existedAddress.append(ipaddress.ip_address(addressSplit.replace(" ", "")))
-        for i in address:
-            network = ipaddress.ip_network(i.replace(" ", ""), False)
-            count = 0
-            for h in network.hosts():
-                if h not in existedAddress:
-                    availableAddress.append(ipaddress.ip_network(h).compressed)
-                    count += 1
-                    if not all:
-                        if network.version == 6 and count > 255:
-                            break
-        return True, availableAddress
+            for i in address:
+                addressSplit, cidr = i.split('/')
+                existedAddress.append(ipaddress.ip_address(addressSplit.replace(" ", "")))
+            for i in address:
+                network = ipaddress.ip_network(i.replace(" ", ""), False)
+                count = 0
+                for h in network.hosts():
+                    if h not in existedAddress:
+                        availableAddress.append(ipaddress.ip_network(h).compressed)
+                        count += 1
+                        if not all:
+                            if network.version == 6 and count > 255:
+                                break
+            return True, availableAddress
 
 """
 Peer
@@ -2084,8 +2463,44 @@ def auth_req():
         if str(request.method) == "GET":
             AllDashboardLogger.log(str(request.url), str(request.remote_addr), Message=str(request.args))
         elif str(request.method) == "POST":
-            AllDashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Request Args: {str(request.args)} Body:{str(request.get_json())}")
-        
+            content_type = request.headers.get('Content-Type', '')
+            try:
+                # Attempt to parse the JSON body of the request
+                body = request.get_json()
+                if body is None:
+                    # If get_json() returns None, the body is empty or not JSON
+                    raise ValueError("Empty or invalid JSON body")
+                body_repr = str(body)
+            except Exception as e:
+                # If parsing fails, check if Content-Type is multipart/form-data
+                if 'multipart/form-data' in content_type:
+                    try:
+                        # Attempt to parse multipart/form-data
+                        # This will not parse the body but ensures it's multipart
+                        _ = request.form  # Accessing form to trigger parsing
+                        body_repr = "multipart/form-data"
+                    except Exception:
+                        # If parsing multipart fails, respond with 415
+                        response = make_response(jsonify({
+                            "status": False,
+                            "message": "Invalid multipart/form-data body",
+                            "data": None
+                        }), 415)
+                        return response
+                else:
+                    # If Content-Type is neither JSON nor multipart/form-data, respond with 415
+                    response = make_response(jsonify({
+                        "status": False,
+                        "message": "Unsupported Media Type. Only application/json and multipart/form-data are supported.",
+                        "data": None
+                    }), 415)
+                    return response
+            # Log the details of the POST request, including query parameters and body
+            AllDashboardLogger.log(
+                str(request.url),
+                str(request.remote_addr),
+                Message=f"Request Args: {str(request.args)} Body: {body_repr}"
+            )
     
     authenticationRequired = DashboardConfig.GetConfig("Server", "auth_req")[1]
     d = request.headers
@@ -2227,14 +2642,12 @@ def API_addConfiguration():
     backup_mode = "Backup" in data.keys()
     
     if backup_mode:
-        # Handle restoration from backup
-        backup_path = os.path.join(
-            DashboardConfig.GetConfig("Server", "wg_conf_path")[1],
-            'WGDashboard_Backup'
-        )
-        backup_file = os.path.join(backup_path, data["Backup"])
-        backup_sql = os.path.join(backup_path, data["Backup"].replace('.conf', '.sql'))
-        backup_iptables = os.path.join(backup_path, data["Backup"].replace('.conf', '_iptables.json'))
+        # Existing backup mode handling
+        config_name = data["Backup"].split("_")[0]
+        backup_paths = get_backup_paths(config_name)
+        backup_file = os.path.join(backup_paths['config_dir'], data["Backup"])
+        backup_sql = os.path.join(backup_paths['config_dir'], data["Backup"].replace('.conf', '.sql'))
+        backup_iptables = os.path.join(backup_paths['config_dir'], data["Backup"].replace('.conf', '_iptables.json'))
         
         if not os.path.exists(backup_file):
             return ResponseObject(False, "Backup configuration file does not exist")
@@ -2255,7 +2668,6 @@ def API_addConfiguration():
                 name=data['ConfigurationName']
             )
         except Exception as e:
-            # Cleanup on failure
             if os.path.exists(wg_conf_path):
                 os.remove(wg_conf_path)
             return ResponseObject(False, f"Failed to initialize configuration: {str(e)}")
@@ -2285,61 +2697,73 @@ def API_addConfiguration():
                 with open(backup_iptables, 'r') as f:
                     scripts = json.load(f)
                 
-                # Create up script
-                if 'up_script' in scripts:
-                    up_path = os.path.join(iptables_dir, f"{data['ConfigurationName']}-up.sh")
-                    with open(up_path, 'w') as f:
-                        f.write(scripts['up_script'])
-                    os.chmod(up_path, 0o755)
-                    
-                    # Update configuration's PostUp to point to new script
-                    WireguardConfigurations[data['ConfigurationName']].PostUp = up_path
+                # Map of script types to configuration attributes and file suffixes
+                script_mapping = {
+                    'preup_script': ('PreUp', '-preup.sh'),
+                    'postup_script': ('PostUp', '-postup.sh'),
+                    'predown_script': ('PreDown', '-predown.sh'),
+                    'postdown_script': ('PostDown', '-postdown.sh')
+                }
                 
-                # Create down script
-                if 'down_script' in scripts:
-                    down_path = os.path.join(iptables_dir, f"{data['ConfigurationName']}-down.sh")
-                    with open(down_path, 'w') as f:
-                        f.write(scripts['down_script'])
-                    os.chmod(down_path, 0o755)
-                    
-                    # Update configuration's PreDown to point to new script
-                    WireguardConfigurations[data['ConfigurationName']].PreDown = down_path
+                # Create and restore all script types
+                for script_key, (config_attr, suffix) in script_mapping.items():
+                    if script_key in scripts:
+                        script_path = os.path.join(iptables_dir, f"{data['ConfigurationName']}{suffix}")
+                        with open(script_path, 'w') as f:
+                            f.write(scripts[script_key])
+                        os.chmod(script_path, 0o755)
+                        
+                        # Update configuration's corresponding attribute to point to new script
+                        setattr(WireguardConfigurations[data['ConfigurationName']], 
+                                config_attr, 
+                                script_path)
+
             except Exception as e:
                 # Cleanup on failure
                 WireguardConfigurations[data['ConfigurationName']].deleteConfiguration()
                 WireguardConfigurations.pop(data['ConfigurationName'])
                 return ResponseObject(False, f"Failed to restore iptables scripts: {str(e)}")
 
+
     else:
-        # Handle new configuration creation
+        # Handle new configuration creation with all IPTables scripts
         try:
-            # Save IPTables rules as bash scripts
             config_name = data['ConfigurationName']
             
-            # Create up script
-            up_script_path = os.path.join(iptables_dir, f"{config_name}-up.sh")
-            with open(up_script_path, 'w') as f:
-                f.write("#!/bin/bash\n\n")
-                f.write("# IPTables Up Rules for {}\n".format(config_name))
-                f.write(data.get('PostUp', ''))
-            os.chmod(up_script_path, 0o755)
+            # Create all IPTables scripts (PreUp, PostUp, PreDown, PostDown)
+            script_types = {
+                'PreUp': '-preup.sh',
+                'PostUp': '-postup.sh',
+                'PreDown': '-predown.sh',
+                'PostDown': '-postdown.sh'
+            }
+            
+            script_paths = {}
+            for script_type, suffix in script_types.items():
+                if script_type in data and data.get(script_type):
+                    script_path = os.path.join(iptables_dir, f"{config_name}{suffix}")
+                    with open(script_path, 'w') as f:
+                        f.write("#!/bin/bash\n\n")
+                        f.write(f"# IPTables {script_type} Rules for {config_name}\n")
+                        f.write(data.get(script_type, ''))
+                    os.chmod(script_path, 0o755)
+                    script_paths[script_type] = script_path
 
-            # Create down script  
-            down_script_path = os.path.join(iptables_dir, f"{config_name}-down.sh")
-            with open(down_script_path, 'w') as f:
-                f.write("#!/bin/bash\n\n")
-                f.write("# IPTables Down Rules for {}\n".format(config_name))
-                f.write(data.get('PreDown', ''))
-            os.chmod(down_script_path, 0o755)
-
-            # Update the PostUp and PreDown in data to use the scripts
-            data['PostUp'] = f"{up_script_path}"
-            data['PreDown'] = f"{down_script_path}"
+            # Update data with script paths for Configuration creation
+            for script_type, path in script_paths.items():
+                data[script_type] = path
 
             # Create the configuration
-            WireguardConfigurations[data['ConfigurationName']] = Configuration(data=data)
+            WireguardConfigurations[config_name] = Configuration(data=data)
 
         except Exception as e:
+            # Cleanup on failure - remove any created script files
+            for script_path in script_paths.values():
+                if os.path.exists(script_path):
+                    try:
+                        os.remove(script_path)
+                    except:
+                        pass
             return ResponseObject(False, f"Failed to create configuration: {str(e)}")
 
     # Handle AmneziaWG specific setup
@@ -2355,7 +2779,6 @@ def API_addConfiguration():
                 print(f"Symbolic link for {data['ConfigurationName']} already exists, skipping...")
 
         except Exception as e:
-            # Non-fatal error - log but don't fail the whole operation
             print(f"Warning: Failed to create AmneziaWG symlink: {str(e)}")
 
     return ResponseObject()
@@ -2660,19 +3083,32 @@ def API_UpdateConfigTablesPostDown():
     except Exception as e:
         return ResponseObject(False, f"Failed to update script: {str(e)}")
 
-
-
-
 @app.post(f'{APP_PREFIX}/api/deleteConfiguration')
 def API_deleteWireguardConfiguration():
     data = request.get_json()
     if "Name" not in data.keys() or data.get("Name") is None or data.get("Name") not in WireguardConfigurations.keys():
         return ResponseObject(False, "Please provide the configuration name you want to delete")
     
-    status = WireguardConfigurations[data.get("Name")].deleteConfiguration()
+    config_name = data.get("Name")
+    
+    # Delete iptables script files before deleting configuration
+    script_types = ['-preup.sh', '-postup.sh', '-predown.sh', '-postdown.sh']
+    iptables_dir = "./iptable-rules"
+    
+    for script_suffix in script_types:
+        script_path = os.path.join(iptables_dir, f"{config_name}{script_suffix}")
+        try:
+            if os.path.exists(script_path):
+                os.remove(script_path)
+                print(f"Deleted iptables script: {script_path}")
+        except Exception as e:
+            print(f"Warning: Failed to delete iptables script {script_path}: {str(e)}")
+    
+    # Delete the configuration
+    status = WireguardConfigurations[config_name].deleteConfiguration()
     
     if status:
-        WireguardConfigurations.pop(data.get("Name"))
+        WireguardConfigurations.pop(config_name)
     return ResponseObject(status)
 
 @app.post(f'{APP_PREFIX}/api/renameConfiguration')
@@ -2690,10 +3126,9 @@ def API_renameConfiguration():
         WireguardConfigurations[data.get("NewConfigurationName")] = Configuration(data.get("NewConfigurationName"))
     return ResponseObject(status, message)
 
-
-
 @app.get(f'{APP_PREFIX}/api/getConfigurationBackup')
 def API_getConfigurationBackup():
+    """Get backups for a specific configuration with organized structure"""
     configurationName = request.args.get('configurationName')
     if configurationName is None or configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
@@ -2701,69 +3136,116 @@ def API_getConfigurationBackup():
 
 @app.get(f'{APP_PREFIX}/api/getAllConfigurationBackup')
 def API_getAllConfigurationBackup():
+    """Get all configuration backups with organized structure"""
     data = {
         "ExistingConfigurations": {},
         "NonExistingConfigurations": {}
     }
+    
+    # Get base backup directory
+    backup_dir = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')
+    
+    # Handle existing configurations
     existingConfiguration = WireguardConfigurations.keys()
-    for i in existingConfiguration:
-        b = WireguardConfigurations[i].getBackups(True)
-        if len(b) > 0:
-            data['ExistingConfigurations'][i] = WireguardConfigurations[i].getBackups(True)
+    for config_name in existingConfiguration:
+        backups = WireguardConfigurations[config_name].getBackups(True)
+        if backups:
+            data['ExistingConfigurations'][config_name] = backups
 
-    directory = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')
-    files = [(file, os.path.getctime(os.path.join(directory, file)))
-             for file in os.listdir(directory) if os.path.isfile(os.path.join(directory, file))]
-    files.sort(key=lambda x: x[1], reverse=True)
+    # Handle non-existing configurations
+    if os.path.exists(backup_dir):
+        # Look for backup directories that don't match existing configurations
+        for dir_name in os.listdir(backup_dir):
+            dir_path = os.path.join(backup_dir, dir_name)
+            if os.path.isdir(dir_path) and dir_name not in existingConfiguration:
+                backups = []
+                files = [(f, os.path.getctime(os.path.join(dir_path, f)))
+                        for f in os.listdir(dir_path)
+                        if os.path.isfile(os.path.join(dir_path, f))]
+                files.sort(key=lambda x: x[1], reverse=True)
 
-    for f, ct in files:
-        if RegexMatch(r"^(.*)_(.*)\.(conf)$", f):
-            s = re.search(r"^(.*)_(.*)\.(conf)$", f)
-            name = s.group(1)
-            if name not in existingConfiguration:
-                if name not in data['NonExistingConfigurations'].keys():
-                    data['NonExistingConfigurations'][name] = []
-                
-                date = s.group(2)
-                d = {
-                    "filename": f,
-                    "backupDate": date,
-                    "content": open(os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup', f), 'r').read()
-                }
-                if f.replace(".conf", ".sql") in list(os.listdir(directory)):
-                    d['database'] = True
-                    d['databaseContent'] = open(os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup', f.replace(".conf", ".sql")), 'r').read()
-                data['NonExistingConfigurations'][name].append(d)
+                for f, _ in files:
+                    if RegexMatch(r"^(.*)_(.*)\.(conf)$", f):
+                        s = re.search(r"^(.*)_(.*)\.(conf)$", f)
+                        date = s.group(2)
+                        backup_info = {
+                            "filename": f,
+                            "backupDate": date,
+                            "content": open(os.path.join(dir_path, f), 'r').read()
+                        }
+
+                        # Check for associated backup files
+                        sql_file = f.replace(".conf", ".sql")
+                        if os.path.exists(os.path.join(dir_path, sql_file)):
+                            backup_info['database'] = True
+                            backup_info['databaseContent'] = open(os.path.join(dir_path, sql_file), 'r').read()
+
+                        iptables_file = f.replace(".conf", "_iptables.json")
+                        if os.path.exists(os.path.join(dir_path, iptables_file)):
+                            backup_info['iptables_scripts'] = True
+                            with open(os.path.join(dir_path, iptables_file), 'r') as iptables_f:
+                                backup_info['iptablesContent'] = iptables_f.read()
+
+                        backups.append(backup_info)
+
+                if backups:
+                    data['NonExistingConfigurations'][dir_name] = backups
+
     return ResponseObject(data=data)
 
 @app.get(f'{APP_PREFIX}/api/createConfigurationBackup')
 def API_createConfigurationBackup():
+    """Create a backup for a specific configuration using organized structure"""
     configurationName = request.args.get('configurationName')
     if configurationName is None or configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    return ResponseObject(status=WireguardConfigurations[configurationName].backupConfigurationFile(), 
-                          data=WireguardConfigurations[configurationName].getBackups())
+    
+    success = WireguardConfigurations[configurationName].backupConfigurationFile()
+    return ResponseObject(
+        status=success,
+        data=WireguardConfigurations[configurationName].getBackups() if success else None
+    )
 
 @app.post(f'{APP_PREFIX}/api/deleteConfigurationBackup')
-def API_deleteConfigurationBackup():
-    data = request.get_json()
-    if ("configurationName" not in data.keys() or 
-            "backupFileName" not in data.keys() or
-            len(data['configurationName']) == 0 or 
-            len(data['backupFileName']) == 0):
-        return ResponseObject(False, 
-        "Please provide configurationName and backupFileName in body")
-    configurationName = data['configurationName']
-    backupFileName = data['backupFileName']
-    if configurationName not in WireguardConfigurations.keys():
-        return ResponseObject(False, "Configuration does not exist")
-    
-    return ResponseObject(WireguardConfigurations[configurationName].deleteBackup(backupFileName))
+def API_DeleteConfigurationBackup():
+    try:
+        data = request.get_json()
+        if 'configurationName' not in data or 'backupFileName' not in data:
+            return ResponseObject(False, "Missing required parameters")
+
+        config_name = data['configurationName']
+        backup_file = data['backupFileName']
+        
+        # Get backup paths
+        backup_timestamp = backup_file.replace(f'{config_name}_', '').replace('.conf', '')
+        backup_paths = get_backup_paths(config_name, backup_timestamp)
+        
+        # Delete backup files if they exist
+        files_to_delete = [
+            backup_paths['conf_file'],
+            backup_paths['sql_file'],
+            backup_paths['iptables_file']
+        ]
+        
+        for file_path in files_to_delete:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        # Check if config backup directory is empty and remove it if so
+        if len(os.listdir(backup_paths['config_dir'])) == 0:
+            os.rmdir(backup_paths['config_dir'])
+            
+        return ResponseObject(True, "Backup deleted successfully")
+        
+    except Exception as e:
+        logging.error(f"Error deleting backup: {str(e)}")
+        return ResponseObject(False, f"Failed to delete backup: {str(e)}")
+
 
 @app.post(f'{APP_PREFIX}/api/restoreConfigurationBackup')
 def API_restoreConfigurationBackup():
+    """Restore a backup using organized structure"""
     try:
-        # Handle both JSON and multipart form data
         if request.is_json:
             data = request.get_json()
             configuration_name = data.get("configurationName")
@@ -2779,9 +3261,8 @@ def API_restoreConfigurationBackup():
                 return ResponseObject(False, "No backup file uploaded")
             
             # Extract configuration name from backup filename
-            # Expected format: configname_YYYYMMDDHHMMSS_complete.zip
             backup_filename = backup_file.filename
-            match = re.search(r"^(.+?)_\d{14}_complete\.zip$", backup_filename)
+            match = re.search(r"^(.+?)_\d{14}_complete\.7z$", backup_filename)
             if not match:
                 return ResponseObject(False, f"Invalid backup filename format: {backup_filename}")
             
@@ -2800,35 +3281,59 @@ def API_restoreConfigurationBackup():
 
         try:
             if backup_file:
-                # Handle uploaded zip file
-                if not backup_file.filename.endswith('.zip'):
-                    return ResponseObject(False, "Uploaded file must be a .zip archive")
+                # Handle uploaded 7z file
+                if not backup_file.filename.endswith('.7z'):
+                    return ResponseObject(False, "Uploaded file must be a .7z archive")
 
                 # Save uploaded file
-                zip_path = os.path.join(temp_dir, backup_file.filename)
-                backup_file.save(zip_path)
+                file_path = os.path.join(temp_dir, backup_file.filename)
+                backup_file.save(file_path)
+
+                # Verify and extract the archive
+                is_valid, error_msg, extracted_files = ArchiveUtils.verify_archive(
+                    open(file_path, 'rb').read()
+                )
+                
+                if not is_valid:
+                    return ResponseObject(False, f"Invalid backup archive: {error_msg}")
 
                 # Create configuration if it doesn't exist
                 if configuration_name not in WireguardConfigurations.keys():
                     WireguardConfigurations[configuration_name] = Configuration(configuration_name)
 
-                # Call restore with upload mode
-                config = WireguardConfigurations[configuration_name]
-                restore_status = config.restoreBackup(zip_path, upload_mode=True)
+                # Get backup paths for the configuration
+                backup_paths = get_backup_paths(configuration_name)
+                
+                # Save extracted files to appropriate locations
+                for filename, content in extracted_files.items():
+                    if filename.startswith('iptable-rules/'):
+                        # Handle iptables rules
+                        rules_dir = os.path.join(
+                            DashboardConfig.GetConfig("Server", "iptable_rules_path")[1]
+                        )
+                        os.makedirs(rules_dir, exist_ok=True)
+                        file_path = os.path.join(rules_dir, os.path.basename(filename))
+                    else:
+                        # Handle regular backup files
+                        file_path = os.path.join(backup_paths['config_dir'], filename)
+                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                    
+                    with open(file_path, 'wb') as f:
+                        f.write(content)
+                    
+                    if filename.endswith('.sh'):
+                        os.chmod(file_path, 0o755)
 
             else:
-                # Handle native backup
+                # Handle native backup restore
                 if configuration_name not in WireguardConfigurations.keys():
                     return ResponseObject(False, "Configuration does not exist")
                 
-                config = WireguardConfigurations[configuration_name]
-                restore_status = config.restoreBackup(backup_file_name)
+                success = WireguardConfigurations[configuration_name].restoreBackup(backup_file_name)
+                if not success:
+                    return ResponseObject(False, "Failed to restore backup")
 
-            return ResponseObject(
-                restore_status,
-                f"Backup restored successfully for configuration: {configuration_name}" if restore_status 
-                else "Failed to restore backup"
-            )
+            return ResponseObject(True, "Backup restored successfully")
 
         finally:
             # Clean up temp directory
@@ -2840,66 +3345,133 @@ def API_restoreConfigurationBackup():
 
 @app.get(f'{APP_PREFIX}/api/downloadConfigurationBackup')
 def API_downloadConfigurationBackup():
+    """Download a backup with enhanced script handling"""
     try:
-        # Get parameters
         config_name = request.args.get('configurationName')
         backup_name = request.args.get('backupFileName')
+        print(f"Download requested for config: {config_name}, backup: {backup_name}")
         
         if not config_name or not backup_name:
-            return jsonify(ResponseObject(False, "Configuration name and backup filename are required")), 400
+            return ResponseObject(False, "Configuration name and backup filename are required")
         
-        # Define paths
-        backup_dir = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')
-        backup_path = os.path.join(backup_dir, backup_name)
+        # Get timestamp from backup filename
+        timestamp = backup_name.split('_')[1].split('.')[0]
+        backup_paths = get_backup_paths(config_name, timestamp)
         
-        if not os.path.exists(backup_path):
-            return jsonify(ResponseObject(False, "Backup file not found")), 404
+        if not os.path.exists(backup_paths['conf_file']):
+            return ResponseObject(False, "Backup file not found")
         
-        # Create a BytesIO object for the zip file
-        memory_file = io.BytesIO()
-        
-        with zipfile.ZipFile(memory_file, 'w') as zf:
+        try:
+            # Collect all backup files
+            files_dict = {}
+            
             # Add main configuration file
-            zf.write(backup_path, os.path.basename(backup_path))
+            with open(backup_paths['conf_file'], 'rb') as f:
+                files_dict[os.path.basename(backup_paths['conf_file'])] = f.read()
             
             # Add SQL backup if it exists
-            sql_backup = backup_path.replace('.conf', '.sql')
-            if os.path.exists(sql_backup):
-                zf.write(sql_backup, os.path.basename(sql_backup))
+            if os.path.exists(backup_paths['sql_file']):
+                with open(backup_paths['sql_file'], 'rb') as f:
+                    files_dict[os.path.basename(backup_paths['sql_file'])] = f.read()
             
             # Add iptables backup if it exists
-            iptables_backup = backup_path.replace('.conf', '_iptables.json')
-            if os.path.exists(iptables_backup):
-                zf.write(iptables_backup, os.path.basename(iptables_backup))
+            if os.path.exists(backup_paths['iptables_file']):
+                # First add the iptables.json file itself
+                with open(backup_paths['iptables_file'], 'rb') as f:
+                    files_dict[os.path.basename(backup_paths['iptables_file'])] = f.read()
                 
-                try:
-                    with open(iptables_backup, 'r') as f:
-                        scripts = json.load(f)
-                        for script_type in ['up_script', 'down_script']:
-                            if script_type in scripts:
-                                script_name = f"{config_name}-{script_type.split('_')[0]}.sh"
-                                script_path = os.path.join("./iptable-rules", script_name)
-                                if os.path.exists(script_path):
-                                    with open(script_path, 'rb') as script_file:
-                                        zf.writestr(f"iptable-rules/{script_name}", script_file.read())
-                except Exception as e:
-                    print(f"Warning: Error processing iptables scripts: {str(e)}")
-        
-        # Reset the file pointer
-        memory_file.seek(0)
-        
-        # Return the zip file using send_file
-        return send_file(
-            memory_file,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name=f"{os.path.splitext(backup_name)[0]}_complete.zip"
-        )
-        
+                # Then process the scripts referenced in iptables.json
+                with open(backup_paths['iptables_file'], 'r') as f:
+                    scripts = json.load(f)
+                # Include all script files if they exist
+                script_types = ['preup', 'postup', 'predown', 'postdown']
+                for script_type in script_types:
+                    script_key = f"{script_type}_script"
+                    if script_key in scripts:
+                        script_name = f"{config_name}-{script_type}.sh"
+                        script_path = os.path.join("./iptable-rules", script_name)
+                        if os.path.exists(script_path):
+                            with open(script_path, 'rb') as sf:
+                                files_dict[f"iptable-rules/{script_name}"] = sf.read()
+                        
+            # Create archive with integrity checks
+            archive_data, _, combined_checksum = ArchiveUtils.create_archive(files_dict)
+            
+            # Create response
+            response = make_response(archive_data)
+            response.headers['Content-Type'] = 'application/x-7z-compressed'
+            response.headers['Content-Disposition'] = \
+                f'attachment; filename="{config_name}_{timestamp}_complete.7z"'
+            response.headers['Content-Length'] = len(archive_data)
+            response.headers['X-Archive-Checksum'] = combined_checksum
+            
+            return response
+            
+        except Exception as e:
+            return ResponseObject(False, f"Error creating backup archive: {str(e)}")
+            
     except Exception as e:
-        return jsonify(ResponseObject(False, f"Error creating backup archive: {str(e)}")), 500
+        return ResponseObject(False, f"Error processing download request: {str(e)}")
 
+@app.post(f'{APP_PREFIX}/api/uploadConfigurationBackup')
+def API_uploadConfigurationBackup():
+    """Upload and process a backup using organized structure"""
+    try:
+        if 'files' not in request.files:
+            return ResponseObject(False, "No file part in request")
+            
+        files = request.files.getlist('files')
+        if not files or len(files) != 1:
+            return ResponseObject(False, "Please upload exactly one backup archive")
 
+        file = files[0]
+        if file.filename == '':
+            return ResponseObject(False, "File name is empty")
+            
+        if not file.filename.endswith('.7z'):
+            return ResponseObject(False, "Only .7z backup archives are allowed")
+
+        # Extract configuration name from filename
+        match = re.search(r"^(.+?)_\d{14}_complete\.7z$", file.filename)
+        if not match:
+            return ResponseObject(False, f"Invalid backup filename format: {file.filename}")
+            
+        config_name = match.group(1)
+        backup_paths = get_backup_paths(config_name)
+
+        # Read and verify the archive
+        archive_data = file.read()
+        is_valid, error_msg, extracted_files = ArchiveUtils.verify_archive(archive_data)
+        
+        if not is_valid:
+            return ResponseObject(False, f"Invalid backup archive: {error_msg}")
+
+        # Save verified files to appropriate locations
+        saved_files = []
+        for filename, content in extracted_files.items():
+            # Skip iptables rules files as they're handled by restoreConfig
+            if filename.startswith('iptable-rules/'):
+                continue
+                
+            # Handle regular backup files
+            file_path = os.path.join(backup_paths['config_dir'], filename)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            saved_files.append(filename)
+            
+            if filename.endswith('.sh'):
+                os.chmod(file_path, 0o755)
+
+        return ResponseObject(
+            True,
+            "Backup archive verified and extracted successfully",
+            {"saved_files": saved_files}
+        )
+
+    except Exception as e:
+        return ResponseObject(False, f"Error processing backup: {str(e)}")
 
 
 
@@ -3683,8 +4255,6 @@ def API_SystemStatus():
             status_code=500
         )
 
-
-
 @app.get(f'{APP_PREFIX}/')
 def index():
     return render_template('index.html')
@@ -3714,7 +4284,6 @@ def peerJobScheduleBackgroundThread():
         while True:
             AllPeerJobs.runJob()
             time.sleep(180)
-
 
 def waitressInit():
     _, app_ip = DashboardConfig.GetConfig("Server", "app_ip")
@@ -3824,3 +4393,38 @@ if __name__ == "__main__":
         threads=8,
         _quiet=False,  # Ensures Waitress uses the 'waitress.access' logger for requests
     )
+
+@app.post(f'{APP_PREFIX}/api/deleteConfigurationBackup')
+def API_DeleteConfigurationBackup():
+    try:
+        data = request.get_json()
+        if 'configurationName' not in data or 'backupFileName' not in data:
+            return ResponseObject(False, "Missing required parameters")
+
+        config_name = data['configurationName']
+        backup_file = data['backupFileName']
+        
+        # Get backup paths
+        backup_timestamp = backup_file.replace(f'{config_name}_', '').replace('.conf', '')
+        backup_paths = get_backup_paths(config_name, backup_timestamp)
+        
+        # Delete backup files if they exist
+        files_to_delete = [
+            backup_paths['conf_file'],
+            backup_paths['sql_file'],
+            backup_paths['iptables_file']
+        ]
+        
+        for file_path in files_to_delete:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        # Check if config backup directory is empty and remove it if so
+        if len(os.listdir(backup_paths['config_dir'])) == 0:
+            os.rmdir(backup_paths['config_dir'])
+            
+        return ResponseObject(True, "Backup deleted successfully")
+        
+    except Exception as e:
+        logging.error(f"Error deleting backup: {str(e)}")
+        return ResponseObject(False, f"Failed to delete backup: {str(e)}")

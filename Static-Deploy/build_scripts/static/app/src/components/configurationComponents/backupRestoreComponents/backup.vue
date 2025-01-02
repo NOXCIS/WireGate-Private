@@ -67,7 +67,7 @@ const downloadBackup = async () => {
     // Create a hidden link element to trigger the download
     const a = document.createElement('a');
     a.href = url;
-    a.download = props.b.filename.replace('.conf', '_complete.zip'); // Set the file name for download
+    a.download = props.b.filename.replace('.conf', '_complete.7z'); // Set the file name for download
     document.body.appendChild(a);
     a.click(); // Trigger the download
     window.URL.revokeObjectURL(url); // Clean up the URL

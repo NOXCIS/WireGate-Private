@@ -204,3 +204,12 @@ iptables -F $CHAIN_NAME
 iptables -X $CHAIN_NAME
 `;
 }
+
+export function generateBlankIPTables(configParams) {
+  const {
+    ConfigurationName = "wg0",
+    Address = "10.0.0.1/24",
+    MasqueradeInterface = "eth0" // Allow override
+  } = configParams;
+  return `#Hello World`;
+}

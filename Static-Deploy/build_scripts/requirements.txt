@@ -1,6 +1,7 @@
 bcrypt
 psutil
 pyotp
+py7zr
 Flask
 flask-cors
 icmplib
