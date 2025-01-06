@@ -1,7 +1,7 @@
 import os
 import socket
 # Import Enviorment
-DASHBOARD_VERSION = 'jiaotu-beta-dev-v0.2.1'
+DASHBOARD_VERSION = 'jiaotu-beta-dev-v0.2.2'
 DASHBOARD_MODE = None
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
 DB_PATH = os.path.join(CONFIGURATION_PATH, 'db')
