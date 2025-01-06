@@ -3,6 +3,11 @@
 .idea
 .env
 
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*/*/*/__pycache__/
+*.py[cod]
 
 
 /UI_DEV_KIT/*

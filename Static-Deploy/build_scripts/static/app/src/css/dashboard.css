@@ -111,6 +111,12 @@
     inherits: false;
 }
 
+@property --brandColor8 {
+    syntax: '<color>';
+    initial-value: #200035;
+    inherits: false;
+}
+
 .nav-brand {
         /*background: rgb(23,139,255);*/
         background: linear-gradient(var(--degree), var(--brandColor6) var(--distance2), var(--brandColor7) 100%) !important;
@@ -181,6 +187,21 @@
 }
 
 
+.tor-logo {
+    background-image: url('/img/tor.svg');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    display: inline-block;
+    vertical-align: middle;
+    width: 25px;
+    height: 25px;
+    margin-right: 0.5rem;
+    position: relative;
+    top: -1px;
+}
+
+
 .amneziawgBg{
     background: rgb(145,199,193);
     background: linear-gradient(90deg, rgba(145,199,193,1) 0%, rgba(107,95,161,1) 50%, rgba(227,142,65,1) 100%);
@@ -210,6 +231,8 @@
     --bs-btn-border-color: #7A0BC4 !important;
     --bs-btn-hover-color: #fff !important;
     --bs-btn-hover-bg: #200035 !important;
+    --bs-btn-active-bg: var(--brandColor8) !important;
+    --bs-btn-active-border-color: #7A0BC4 !important;
     --bs-btn-hover-border-color: #7A0BC4 !important;
 }
 
@@ -383,14 +406,74 @@
 
 
 [data-bs-theme="dark"] .nav-link:hover {
-    background-color: #8649ae;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-
-[data-bs-theme="dark"] .sidebar .nav-link.active:hover {
-    color: #ffffff;
+[data-bs-theme="dark"] .nav-link:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(234deg, var(--brandColor7) 0%, var(--brandColor3) 100%);
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0.8;
+    z-index: -1;
 }
 
+[data-bs-theme="dark"] .nav-link:hover {
+    transform: translateX(4px);
+    color: var(--brandColor3) !important;
+}
+
+[data-bs-theme="dark"] .nav-link:hover:before {
+    left: 0;
+}
+
+[data-bs-theme="dark"] .nav-link.active {
+    position: relative;
+    background: none;
+    transform: none;
+    color: white !important;
+}
+
+[data-bs-theme="dark"] .nav-link.active:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(234deg, var(--brandColor3) 0%, var(--brandColor7) 100%);
+    animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards,
+               gradientShift 4s ease-in-out infinite;
+    opacity: 1;
+    z-index: -1;
+}
+
+@keyframes slideInRight {
+    from {
+        right: -100%;
+    }
+    to {
+        right: 0;
+    }
+}
+
+@keyframes gradientShift {
+    0% {
+        background: linear-gradient(234deg, var(--brandColor4) 0%, var(--brandColor6) 100%);
+    }
+    50% {
+        background: linear-gradient(234deg, var(--brandColor7) 0%, var(--brandColor3) 100%);
+    }
+    100% {
+        background: linear-gradient(234deg, var(--brandColor3) 0%, var(--brandColor7) 100%);
+    }
+}
 
 [data-bs-theme="dark"] .awg-header {
     background: rgb(145,199,193);
@@ -491,7 +574,7 @@
 
 .nav-link {
     color: #220337 !important;
-    
+    transition: all 0.2s ease-in-out;
     
 }
 .nav-pills .nav-link.active, .nav-pills .show > .nav-link {
@@ -958,10 +1041,15 @@ main {
 {
     font-size: 1rem;
     margin: 0 !important;
-    transform: translateY(2.1rem) translateX(1rem);
     padding: 0;
 }
 
+/* Specific styling for login badges */
+.login-badges {
+    padding: 1rem 0.75rem !important;
+    height: 100%;
+    pointer-events: none;
+}
 
 .modal-content {
     border-radius: 10px;

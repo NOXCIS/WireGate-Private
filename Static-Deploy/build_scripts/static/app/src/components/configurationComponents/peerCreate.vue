@@ -157,7 +157,7 @@ export default {
 				</div>
 			</div>
 			<hr>
-			<hr>
+			
 			<div class="d-flex mt-2">
 				<button class="ms-auto btn btn-dark btn-brand rounded-3 px-3 py-2 shadow"
 				        :disabled="!this.allRequireFieldsFilled || this.saving"

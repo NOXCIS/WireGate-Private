@@ -39,6 +39,8 @@ export default {
 				password: "",
 				totp: "",
 			},
+			showUsername: false,
+			showPassword: false,
 			loginError: false,
 			loginErrorMessage: "",
 			loading: false
@@ -57,6 +59,11 @@ export default {
 	},
 	methods: {
 		GetLocale,
+		resetValidation(event) {
+			event.target.classList.remove('is-invalid', 'is-valid');
+			this.loginError = false;
+			this.loginErrorMessage = "";
+		},
 		async auth(){
 			if (this.formValid){
 				this.loading = true
@@ -114,30 +121,44 @@ export default {
 				      class="mt-3"
 				      v-if="!this.store.CrossServerConfiguration.Enable">
 					<div class="form-floating mb-2">
-						<input type="text"
+						<input type="username"
 						       required
 						       :disabled="loading"
 						       v-model="this.data.username"
 						       name="username"
 						       autocomplete="username"
 						       autofocus
+						       @focus="resetValidation"
 						       class="form-control rounded-3" id="username" placeholder="Username">
-						<label for="floatingInput" class="login-badges d-flex">
+						<label for="username" class="login-badges d-flex">
 							<i class="bi bi-person-circle me-2"></i>
 							<LocaleText t="Username"></LocaleText>	
 						</label>
 					</div>
-					<div class="form-floating mb-2 ">
-						<input type="password"
+					<div class="form-floating mb-2 position-relative">
+						<input :type="showPassword ? 'text' : 'password'"
 						       required
 						       :disabled="loading"
 						       autocomplete="current-password"
 						       v-model="this.data.password"
-						       class="form-control rounded-3" id="password" placeholder="Password">
-						<label for="floatingInput" class="login-badges d-flex">
+						       class="form-control rounded-3" 
+						       id="password" 
+						       placeholder="Password"
+						       ref="passwordInput"
+						       @focus="resetValidation($event)">
+						<label for="password" class="login-badges d-flex">
 							<i class="bi bi-key-fill me-2"></i>
 							<LocaleText t="Password"></LocaleText>	
 						</label>
+						<button type="button"
+						        v-show="!loginError && !$refs.passwordInput?.classList.contains('is-invalid')"
+						        class="btn btn-link position-absolute top-50 end-0 translate-middle-y text-body-secondary pe-3 border-0"
+						        style="z-index: 5;"
+						        @click="showPassword = !showPassword"
+						        :aria-label="showPassword ? 'Hide password' : 'Show password'"
+						        :title="showPassword ? 'Hide password' : 'Show password'">
+							<i class="bi" :class="showPassword ? 'bi-eye-slash-fill' : 'bi-eye-fill'"></i>
+						</button>
 					</div>
 					<div class="form-floating mb-2" v-if="this.totpEnabled">
 						<input type="text"
@@ -146,6 +167,7 @@ export default {
 						       :disabled="loading"
 						       placeholder="totp"
 						       v-model="this.data.totp"
+						       @focus="resetValidation"
 						       class="form-control rounded-3" 
 						       maxlength="6" 
 						       inputmode="numeric" 

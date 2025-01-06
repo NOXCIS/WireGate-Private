@@ -27,8 +27,8 @@ WORKDIR /build
 # Copy application code and dependencies
 COPY ./build_scripts/torflux.go .
 COPY ./build_scripts/go.mod .
-COPY ./build_scripts/dashboard.py .
-COPY ./build_scripts/Utilities.py .
+COPY ./build_scripts/wiregate /build/wiregate/
+COPY ./build_scripts/wiregate.py .
 COPY ./build_scripts/requirements.txt .
 COPY ./build_scripts/vanguards /build/vanguards/
 COPY ./build_scripts/vanguards.py .
@@ -40,7 +40,7 @@ RUN     python3 -m venv venv \
 
 # Use PyInstaller to create a standalone binary with UPX compression
 RUN     venv/bin/pip install pyinstaller && \
-        venv/bin/pyinstaller --clean --onefile --upx-dir=/usr/bin --name dashboard dashboard.py && \
+        venv/bin/pyinstaller --clean --onefile --upx-dir=/usr/bin --name wiregate wiregate.py && \
         venv/bin/pyinstaller --clean --onefile --strip --upx-dir=/usr/bin --name vanguards vanguards.py 
 
 RUN     go build -buildmode=pie -ldflags="-s -w" -o torflux
@@ -91,7 +91,7 @@ COPY --from=noxcis/awg-bins:latest /awg /usr/bin/awg
 COPY --from=noxcis/awg-bins:latest /awg-quick /usr/bin/awg-quick
 
 # Copy WG-Dash & Tor Vanguards binaries
-COPY --from=builder /build/dist/dashboard /WireGate/dashboard
+COPY --from=builder /build/dist/wiregate /WireGate/wiregate
 COPY --from=builder /build/dist/vanguards /WireGate/vanguards
 COPY --from=builder /build/torflux /WireGate/torflux
 

@@ -90,11 +90,17 @@ export default {
 					</li>
 				</ul>
 				<hr class="text-body">
-				<h6 class="sidebar-heading px-3 mt-4 mb-1 text-muted text-center">
+				<h6 class="sidebar-heading px-3 mt-4 mb-3 text-muted" style="font-size: 0.7rem; font-weight: 100;">
 					<i class="bi bi-body-text me-2"></i>
 					<LocaleText t="Configurations"></LocaleText>
 				</h6>
 				<ul class="nav flex-column px-2">
+					<li class="nav-item mb-2">
+						<RouterLink to="/new_configuration" class="nav-link rounded-3" active-class="active">
+							<i class="bi bi-plus-circle me-2"></i>
+							<LocaleText t="New Configuration"></LocaleText>
+						</RouterLink>
+					</li>
 					<li class="nav-item" v-for="c in this.wireguardConfigurationsStore.Configurations">
 						<RouterLink :to="'/configuration/'+c.Name + '/peers'" class="nav-link nav-conf-link rounded-3"
 						            active-class="active"
@@ -105,23 +111,39 @@ export default {
 					</li>
 				</ul>
 				<hr class="text-body">
-				<h6 class="sidebar-heading px-3 mt-4 mb-1 text-muted text-center">
+				<h6 class="sidebar-heading px-3 mt-4 mb-3 text-muted" style="font-size: 0.7rem; font-weight: 100;">
 					<i class="bi bi-tools me-2"></i>
 					<LocaleText t="Tools"></LocaleText>
 				</h6>
 				<ul class="nav flex-column px-2">
-					<li class="nav-item">
+					<li class="nav-item mb-2">
 						<RouterLink to="/system_status" class="nav-link rounded-3" active-class="active">
+							<i class="bi bi-pc-display me-2"></i>
 							<LocaleText t="System Status"></LocaleText>
 						</RouterLink>
 					</li>
-					<li class="nav-item">
+					<li class="nav-item mb-2">
+						<RouterLink to="/tor-configuration" class="nav-link rounded-3" active-class="active">
+							<i class="bi tor-logo me-2"></i>
+							<LocaleText t="Tor Configuration"></LocaleText>
+						</RouterLink>
+					</li>
+					<li class="nav-item mb-2">
 						<RouterLink to="/ping" class="nav-link rounded-3" active-class="active">
+							<i class="bi bi-broadcast me-2" style="font-size: 1.3em"></i>
 							<LocaleText t="Ping"></LocaleText>
-						</RouterLink></li>
-					<li class="nav-item">
+						</RouterLink>
+					</li>
+					<li class="nav-item mb-2">
 						<RouterLink to="/traceroute" class="nav-link rounded-3" active-class="active">
+							<i class="bi bi-diagram-2 me-2" style="font-size: 1.4em"></i>
 							<LocaleText t="Traceroute"></LocaleText>
+						</RouterLink>
+					</li>
+					<li class="nav-item mb-2">
+						<RouterLink to="/restore_configuration" class="nav-link rounded-3" active-class="active">
+							<i class="bi bi-cloud-upload me-2" style="font-size: 1.3em"></i>
+							<LocaleText t="Upload & Restore"></LocaleText>
 						</RouterLink>
 					</li>
 				</ul>
@@ -135,17 +157,27 @@ export default {
 							<LocaleText t="Sign Out"></LocaleText>	
 						</a>
 					</li>
-					<li class="nav-item" style="font-size: 0.8rem">
-						<a :href="this.updateUrl" v-if="this.updateAvailable" class="text-decoration-none rounded-3" target="_blank">
-							<small class="nav-link text-muted rounded-3" >
-								<LocaleText :t="this.updateMessage"></LocaleText>
-								(<LocaleText t="Current Version:"></LocaleText> {{ dashboardConfigurationStore.Configuration.Server.version }})
-							</small>
+					<li class="nav-item">
+						<a :href="this.updateUrl" 
+						   v-if="this.updateAvailable" 
+						   class="nav-link text-success rounded-3 d-flex align-items-center" 
+						   target="_blank">
+							<i class="bi bi-arrow-up-circle me-2"></i>
+							<div class="d-flex flex-column">
+								<small><LocaleText :t="this.updateMessage"></LocaleText></small>
+								<small class="text-muted">
+									<LocaleText t="Current Version:"></LocaleText> 
+									{{ dashboardConfigurationStore.Configuration.Server.version }}
+								</small>
+							</div>
 						</a>
-						<small class="nav-link text-muted rounded-3" v-else>
-							<LocaleText :t="this.updateMessage"></LocaleText>
-							({{ dashboardConfigurationStore.Configuration.Server.version }})
-						</small>
+						<div v-else class="nav-link text-muted rounded-3 d-flex align-items-center">
+							<i class="bi bi-check-circle me-2"></i>
+							<div class="d-flex flex-column">
+								<small><LocaleText :t="this.updateMessage"></LocaleText></small>
+								<small>{{ dashboardConfigurationStore.Configuration.Server.version }}</small>
+							</div>
+						</div>
 					</li>
 				</ul>
 			</div>
@@ -157,10 +189,20 @@ export default {
 </template>
 
 <style scoped>
+
+
+
+.nav-link.active {
+	background: linear-gradient(234deg, var(--brandColor4) 0%, var(--brandColor6) 100%);
+	color: white !important;
+	font-weight: 500;
+}
+
 @media screen and (max-width: 768px) {
 	.navbar-container{
 		position: absolute;
 		z-index: 1000;
+		
 		animation-duration: 0.4s;
 		animation-fill-mode: both;
 		display: none;
@@ -173,10 +215,7 @@ export default {
 	}
 }
 
-.navbar-container{
-	height: 100vh;
-	
-}
+
 
 
 @supports (height: 100dvh) {

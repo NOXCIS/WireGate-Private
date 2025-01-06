@@ -964,13 +964,7 @@ export default {
             >
               <i class="bi bi-check-circle-fill me-2" v-if="torEnabled"></i>
               <i class="bi bi-circle me-2" v-else></i>
-              <strong class="d-flex align-items-center">
-                <img 
-                  src="/img/tor.svg"
-                  class="me-2"
-                  alt="Tor Logo"
-                  style="width: 30px; height: 20px;"
-                >
+              <strong class="d-flex tor-logo align-items-center">
               </strong>
             </a>
           </div>
@@ -991,6 +985,8 @@ export default {
       }"
       placeholder="ex. wg1"
       id="ConfigurationName"
+      autocomplete="off"
+      aria-label="Configuration Name"
       v-model="newConfiguration.ConfigurationName"
       :disabled="loading"
       required
@@ -1028,6 +1024,8 @@ export default {
       }"
       placeholder="0-65353" 
       id="ListenPort" 
+      autocomplete="off"
+      aria-label="Listen Port"
       v-model.number="newConfiguration.ListenPort"
       :disabled="loading"
       min="1"
@@ -1052,7 +1050,7 @@ export default {
           </div>
           <div class="card-body" style="font-family: var(--bs-font-monospace)">
             <div class="mb-2">
-              <label class="text-muted fw-bold mb-1">
+              <label class="text-muted fw-bold mb-1" for="PrivateKey">
                 <small><LocaleText t="Private Key"></LocaleText></small>
               </label>
               <div class="input-group">
@@ -1060,6 +1058,8 @@ export default {
                   type="text" 
                   class="form-control" 
                   id="PrivateKey" 
+                  autocomplete="off"
+                  aria-label="Private Key"
                   v-model="newConfiguration.PrivateKey" 
                   :disabled="loading"
                 >
@@ -1075,13 +1075,15 @@ export default {
               </div>
             </div>
             <div>
-              <label class="text-muted fw-bold mb-1">
+              <label class="text-muted fw-bold mb-1" for="PublicKey">
                 <small><LocaleText t="Public Key"></LocaleText></small>
               </label>
               <input 
                 type="text" 
                 class="form-control" 
                 id="PublicKey" 
+                autocomplete="off"
+                aria-label="Public Key"
                 v-model="newConfiguration.PublicKey"
                 disabled
               >
@@ -1107,6 +1109,8 @@ export default {
       }"
       placeholder="Ex: 10.0.0.1/24" 
       id="Address" 
+      autocomplete="off"
+      aria-label="IP Address/CIDR"
       v-model="newConfiguration.Address"
       :disabled="loading"
       required
@@ -1135,7 +1139,9 @@ export default {
             
             <div v-show="isAWGOpen" class="card-body">
               <div v-for="key in ['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'H1', 'H2', 'H3', 'H4']" :key="key" class="mb-3">
-                <label class="text-muted fw-bold mb-1"><small>{{ key }}</small></label>
+                <label :for="key" class="text-muted fw-bold mb-1">
+                  <small>{{ key }}</small>
+                </label>
                 <div v-if="descriptions[key]" class="form-text text-muted">
                   <small>{{ descriptions[key] }}</small>
                 </div>
@@ -1146,6 +1152,8 @@ export default {
                   v-model="newConfiguration[key]"
                   :id="key"
                   :placeholder="key"
+                  autocomplete="off"
+                  :aria-label="key"
                 />
                 <div class="invalid-feedback">
                   <LocaleText :t="`Invalid value for ${key}`"></LocaleText>
@@ -1220,7 +1228,7 @@ export default {
                       role="button"
                     >
                       {{ field }}
-                    </a>
+                    </a> 
                   </div>
 
                   

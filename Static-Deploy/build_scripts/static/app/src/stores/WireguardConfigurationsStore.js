@@ -64,7 +64,8 @@ export const WireguardConfigurationsStore = defineStore('WireguardConfigurations
 					}
 				]
 			}
-		}
+		},
+		eventSource: null
 	}),
 	actions: {
 		async getConfigurations(){
@@ -84,6 +85,17 @@ export const WireguardConfigurationsStore = defineStore('WireguardConfigurations
 			console.log(key)
 			const reg = /^[A-Za-z0-9+/]{43}=?=?$/;
 			return reg.test(key)
+		},
+		initConfigStatusStream() {
+			this.eventSource = new EventSource('/api/config-status-stream')
+			this.eventSource.onmessage = (event) => {
+				this.Configurations = JSON.parse(event.data)
+			}
+		},
+		cleanup() {
+			if (this.eventSource) {
+				this.eventSource.close()
+			}
 		}
 	}
 });

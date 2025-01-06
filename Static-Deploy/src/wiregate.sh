@@ -111,7 +111,7 @@ dashboard_setup(){
 dashboard_start() {
     printf "%s\n" "$equals"
     # Start the dashboard executable in the background and capture its PID
-    ./dashboard  >> "$log_dir/dashboard_startup_log_$(date +'%Y-%m-%d_%H-%M-%S').txt" & 
+    ./wiregate  >> "$log_dir/dashboard_startup_log_$(date +'%Y-%m-%d_%H-%M-%S').txt" & 
     echo $! > "$PID_FILE"
 
 }

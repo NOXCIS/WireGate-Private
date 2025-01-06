@@ -1,4 +1,4 @@
-// Copyright(C) 2024 NOXCIS [https://github.com/NOXCIS]
+// Copyright(C) 2025 NOXCIS [https://github.com/NOXCIS]
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -115,20 +116,78 @@ func sendSignal(port int, password string, statusBuffer *bytes.Buffer) bool {
 	return true
 }
 
+// sendHUP sends a HUP signal to the specified Tor control port
+func sendHUP(port int, password string) bool {
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+	conn, err := net.DialTimeout("tcp", address, socketTimeout)
+	if err != nil {
+		logMessage("[TOR-FLUX] [ERROR] Connection to Tor control port failed", false, false)
+		return false
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(socketTimeout))
+	reader := bufio.NewReader(conn)
+
+	// Authenticate
+	if password != "" {
+		authCmd := fmt.Sprintf("AUTHENTICATE \"%s\"\r\n", password)
+		fmt.Fprint(conn, authCmd)
+
+		resp, _ := reader.ReadString('\n')
+		if !strings.Contains(resp, "250") {
+			logMessage("[TOR-FLUX] [ERROR] Tor authentication failed", false, false)
+			return false
+		}
+	}
+
+	// Send SIGNAL HUP
+	fmt.Fprint(conn, "SIGNAL HUP\r\n")
+	resp, _ := reader.ReadString('\n')
+	if !strings.Contains(resp, "250") {
+		logMessage("[TOR-FLUX] [ERROR] Failed to send HUP signal", false, false)
+		return false
+	}
+
+	logMessage("[TOR-FLUX] HUP signal sent successfully", false, true)
+	return true
+}
+
 func main() {
+	// Define command line flags
+	configType := flag.String("config", "", "Configuration type (main/dns) for HUP signal")
+	flag.Parse()
+
 	password := os.Getenv("VANGUARD")
 	if password == "" {
 		logMessage("[TOR-FLUX] [ERROR] Tor control port password (VANGUARD) is not set or empty.", false, true)
 		os.Exit(1)
 	}
 
-	logMessage("[TOR-FLUX] Starting Tor circuit refresh...", false, true)
+	// If config type is specified, send HUP signal
+	if *configType != "" {
+		var port int
+		switch strings.ToLower(*configType) {
+		case "main":
+			port = torControlPort1
+		case "dns":
+			port = torControlPort2
+		default:
+			logMessage("[TOR-FLUX] [ERROR] Invalid config type. Use 'main' or 'dns'.", false, true)
+			os.Exit(1)
+		}
 
-	// Send NEWNYM signal and get circuit statuses
+		if !sendHUP(port, password) {
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Original NEWNYM functionality
+	logMessage("[TOR-FLUX] Starting Tor circuit refresh...", false, true)
 	statusBuffer1 := &bytes.Buffer{}
 	statusBuffer2 := &bytes.Buffer{}
 	sendSignal(torControlPort1, password, statusBuffer1)
 	sendSignal(torControlPort2, password, statusBuffer2)
-
 	logMessage("[TOR-FLUX] Tor circuit refresh completed.", true, true)
 }

@@ -13,7 +13,7 @@ export default {
 		show(){
 			this.timeout = setTimeout(() => {
 				this.message.show = false
-			}, 5000)
+			}, 3000)
 		},
 		ct(){
 			clearTimeout(this.timeout)

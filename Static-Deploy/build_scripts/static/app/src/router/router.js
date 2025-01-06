@@ -47,6 +47,14 @@ const router = createRouter({
 					}
 				},
 				{
+					name: "Tor Configuration",
+					path: '/tor-configuration',
+					component: () => import('@/views/TorConfiguration.vue'),
+					meta: {
+						title: "Tor Configuration"
+					}
+				},
+				{
 					path: '/ping',
 					name: "Ping",
 					component: () => import('@/views/ping.vue'),
