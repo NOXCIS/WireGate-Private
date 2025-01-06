@@ -12,8 +12,8 @@ WG_CONF_PATH = None
 UPDATE = None
 
 
-TORRC_PATH = "./torrc"
-DNS_TORRC_PATH = "./dnstorrc"
+TORRC_PATH = "/etc/tor/torrc"
+DNS_TORRC_PATH = "/etc/tor/dnstorrc"
 
 
 # Folder to save uploaded files
