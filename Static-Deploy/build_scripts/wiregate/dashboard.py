@@ -51,31 +51,8 @@ class CustomJsonEncoder(DefaultJSONProvider):
 
 app.json = CustomJsonEncoder(app)
 
-def backGroundThread():
-    global WireguardConfigurations
-    print(f"[WGDashboard] Background Thread #1 Started", flush=True)
-    time.sleep(10)
-    while True:
-        with app.app_context():
-            for c in WireguardConfigurations.values():
-                if c.getStatus():
-                    try:
-                        c.getPeersTransfer()
-                        c.getPeersLatestHandshake()
-                        c.getPeersEndpoint()
-                        c.getPeersList()
-                        c.getRestrictedPeersList()
-                    except Exception as e:
-                        print(f"[WGDashboard] Background Thread #1 Error: {str(e)}", flush=True)
-        time.sleep(10)
 
-def peerJobScheduleBackgroundThread():
-    with app.app_context():
-        print(f"[WGDashboard] Background Thread #2 Started", flush=True)
-        time.sleep(10)
-        while True:
-            AllPeerJobs.runJob()
-            time.sleep(180)
+
 
 CORS(app, resources={rf"{APP_PREFIX}/api/*": {
     "origins": "*",
@@ -85,7 +62,7 @@ CORS(app, resources={rf"{APP_PREFIX}/api/*": {
 
 from .routes.api import api_blueprint  
 from .routes.tor_api import tor_blueprint
-
+from .routes.api import backGroundThread, peerJobScheduleBackgroundThread
 
 # Initialize logger
 # Set up the rotating file handler with dynamic filename

@@ -15,11 +15,12 @@
 from wiregate.dashboard import waitressInit, startThreads, get_timestamped_filename, RotatingFileHandler, logging
 from wiregate.dashboard import app, app_ip, app_port
 import waitress
-
+from wiregate.modules.models import InitWireguardConfigurationsList
 
 
 if __name__ == "__main__":
    
+    InitWireguardConfigurationsList(startup=True)
     waitressInit()
     # Start background threads
     startThreads()
