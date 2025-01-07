@@ -102,9 +102,9 @@ export default {
 						</RouterLink>
 					</li>
 					<li class="nav-item" v-for="c in this.wireguardConfigurationsStore.Configurations">
-						<RouterLink :to="'/configuration/'+c.Name + '/peers'" class="nav-link nav-conf-link rounded-3"
-						            active-class="active"
-						            >
+						<RouterLink :to="'/configuration/'+c.Name + '/peers'" 
+						            class="nav-link nav-conf-link rounded-3"
+						            active-class="active">
 							<span class="dot me-2" :class="{active: c.Status}"></span>
 							{{c.Name}}
 						</RouterLink>
