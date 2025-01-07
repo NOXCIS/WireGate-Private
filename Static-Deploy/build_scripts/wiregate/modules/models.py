@@ -551,13 +551,21 @@ class Configuration:
                             checkIfExist = sqlSelect("SELECT * FROM '%s' WHERE id = ?" % self.Name,
                                                      ((i['PublicKey']),)).fetchone()
                             if checkIfExist is None:
+                                allowed_ips = i.get("AllowedIPs", "N/A").split(',')
+                                addr_v4 = []
+                                addr_v6 = []
+                                for addr in allowed_ips:
+                                    addr = addr.strip()
+                                    if ':' in addr:  # IPv6
+                                        addr_v6.append(addr)
+                                    else:  # IPv4
+                                        addr_v4.append(addr)
+
                                 newPeer = {
                                     "id": i['PublicKey'],
                                     "private_key": "",
                                     "DNS": DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1],
-                                    "endpoint_allowed_ip":
-                                        DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[
-                                            1],
+                                    "endpoint_allowed_ip": DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[1],
                                     "name": i.get("name"),
                                     "total_receive": 0,
                                     "total_sent": 0,
@@ -573,16 +581,17 @@ class Configuration:
                                     "mtu": DashboardConfig.GetConfig("Peers", "peer_mtu")[1],
                                     "keepalive": DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1],
                                     "remote_endpoint": DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                                    "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else ""
+                                    "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else "",
+                                    "address_v4": ','.join(addr_v4) if addr_v4 else None,
+                                    "address_v6": ','.join(addr_v6) if addr_v6 else None
                                 }
                                 sqlUpdate(
                                     """
                                     INSERT INTO '%s'
                                         VALUES (:id, :private_key, :DNS, :endpoint_allowed_ip, :name, :total_receive, :total_sent, 
                                         :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent, 
-                                        :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
-                                    """ % self.Name
-                                    , newPeer)
+                                        :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key, :address_v4, :address_v6);
+                                    """ % self.Name, newPeer)
                                 self.Peers.append(Peer(newPeer, self))
                             else:
                                 sqlUpdate("UPDATE '%s' SET allowed_ip = ? WHERE id = ?" % self.Name,

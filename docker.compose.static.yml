@@ -96,12 +96,12 @@ services:
         - WGD_TOR_PROXY=true          #Enable Tor
         - WGD_TOR_EXIT_NODES={ch}     #Ex. {gb},{fr}
         - WGD_TOR_DNS_EXIT_NODES={us}
-        - WGD_TOR_BRIDGES=true        #Enable Tor Bridges
+        - WGD_TOR_BRIDGES=false        #Enable Tor Bridges
         - WGD_TOR_PLUGIN=snowflake    #OPTIONS webtunnel, obfs4, snowflake
       #WGDashboard Global Settings
       ##########################################################
         - WGD_WELCOME_SESSION=false
-        - WGD_AUTH_REQ=true
+        - WGD_AUTH_REQ=false
         - WGD_USER=admin
         - WGD_PASS=admin
         - WGD_REMOTE_ENDPOINT=0.0.0.0
