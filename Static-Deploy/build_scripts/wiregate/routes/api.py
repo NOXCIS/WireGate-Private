@@ -1,19 +1,16 @@
-import os
-import hashlib
-import bcrypt
-import pyotp
+import os, hashlib, bcrypt, pyotp
+import psutil, logging, json, ipaddress
+import re, shutil, requests
+
+
 from datetime import datetime
-import psutil
-import logging
-import json
-import ipaddress
-import re
-import shutil
-import requests
 from icmplib import ping, traceroute
 import time
 
-from flask import Flask, Blueprint, request, render_template, session, jsonify, make_response, Response
+from flask import (
+    Flask, Blueprint, request, render_template, 
+    session, jsonify, make_response, Response
+)
 
 from ..modules.shared import (
     app, ResponseObject, sqlUpdate, 
@@ -21,28 +18,23 @@ from ..modules.shared import (
 )
 
 from ..modules.models import (
-    DashboardConfig,
-    WireguardConfigurations,
-    Configuration,
-    PeerJob,
-    Locale,
-    AllPeerShareLinks,
-    AllPeerJobs,
-    JobLogger,
-    AllDashboardLogger,
-    get_backup_paths,
-    ArchiveUtils,
+    DashboardConfig,  Configuration, PeerJob, Locale, ArchiveUtils,
+    WireguardConfigurations, AllPeerShareLinks, AllPeerJobs,
+    JobLogger, AllDashboardLogger, 
+    InitWireguardConfigurationsList, get_backup_paths,
     APP_PREFIX,
-    InitWireguardConfigurationsList
 )
 from ..modules.config import wgd_config_path
+
 from ..Utilities import (
     RegexMatch, GenerateWireguardPublicKey,
     GenerateWireguardPrivateKey
 )
 
+
+
 api_blueprint = Blueprint('api', __name__)
-tor_blueprint = Blueprint('tor', __name__)
+
 
 
 

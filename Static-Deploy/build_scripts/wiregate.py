@@ -11,16 +11,49 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from wiregate.dashboard import waitressInit, startThreads, get_timestamped_filename, RotatingFileHandler, logging
-from wiregate.dashboard import app, app_ip, app_port
-import waitress
+from wiregate.modules.shared import get_timestamped_filename
+from wiregate.dashboard import waitressInit, startThreads
 from wiregate.modules.models import InitWireguardConfigurationsList
+from wiregate.dashboard import app, app_ip, app_port
+from logging.handlers import RotatingFileHandler
+from flask import request, g
+from time import strftime
+import time, waitress, logging
 
+
+@app.before_request
+def before_request():
+    """Store the start time of the request."""
+    g.start_time = time.time()
+
+@app.after_request
+def after_request(response):
+    """Log access details after the request is processed."""
+    # Safeguard in case g.start_time is not set
+    start_time = getattr(g, 'start_time', time.time())
+    response_time = round((time.time() - start_time) * 1000, 2)  # in milliseconds
+    
+    # Format log entry
+    timestamp = strftime('[%Y-%b-%d %H:%M]')
+    log_entry = (
+        f"{timestamp} "
+        f"User-Agent: {request.user_agent.string} "
+        f"IP: {request.remote_addr} "
+        f"Referrer: {request.referrer or 'No Referrer'} "
+        f"Method: {request.method} "
+        f"Scheme: {request.scheme} "
+        f"Path: {request.full_path} "
+        f"Status: {response.status_code} "
+        f"Response Time: {response_time} ms"
+    )
+    logger.info(log_entry)
+    
+    return response
 
 if __name__ == "__main__":
    
     InitWireguardConfigurationsList(startup=True)
+    
     waitressInit()
     # Start background threads
     startThreads()
@@ -40,6 +73,5 @@ if __name__ == "__main__":
         app,
         host=app_ip,
         port=app_port,
-        threads=8,
-        _quiet=False,  # Ensures Waitress uses the 'waitress.access' logger for requests
+        threads=8, 
     )

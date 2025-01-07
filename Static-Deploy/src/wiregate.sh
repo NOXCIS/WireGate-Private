@@ -92,11 +92,11 @@ dashboard_setup(){
     printf "[WIREGATE] Setting Up Dashboard\n"
     sudo chmod -R 755 ${WGD_CONF_PATH}/
 
-	if [ ! -d "${WGD_CONF_PATH}/WGDashboard_Backup" ]
-    	then
-    		printf "[WIREGATE] Creating Dashboard_Backup folder\n"
-            mkdir "${WGD_CONF_PATH}/WGDashboard_Backup"
-    fi
+	#if [ ! -d "${WGD_CONF_PATH}/WGDashboard_Backup" ]
+    #	then
+    #		printf "[WIREGATE] Creating Dashboard_Backup folder\n"
+    #        mkdir "${WGD_CONF_PATH}/WGDashboard_Backup"
+    #fi
     
     if [ ! -d "log" ]
 	  then 

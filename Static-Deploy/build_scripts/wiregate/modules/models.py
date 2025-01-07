@@ -110,6 +110,10 @@ class Configuration:
 
         self.configPath = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], f'{self.Name}.conf')
 
+        backupPath = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')
+        if not os.path.exists(backupPath):
+            os.mkdir(backupPath)
+
         if name is not None:
             if data is not None and "Backup" in data.keys():
                 db = self.__importDatabase(
@@ -2374,9 +2378,8 @@ def InitWireguardConfigurationsList(startup: bool = False):
 
 # Initialize shared instances
 WireguardConfigurations: dict[str, Configuration] = {}
-#WireguardConfigurations = {} 
 JobLogger: PeerJobLogger = PeerJobLogger()
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()
 AllDashboardLogger: DashboardLogger = DashboardLogger()
-InitWireguardConfigurationsList(startup=True)
+#InitWireguardConfigurationsList(startup=True)

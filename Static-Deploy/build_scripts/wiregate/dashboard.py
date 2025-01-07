@@ -1,31 +1,20 @@
-import time, threading, logging
-
-
-
+import threading
 
 from typing import Any
 from json import JSONEncoder
 from flask_cors import CORS
 from flask.json.provider import DefaultJSONProvider
-from flask import request, g
-from time import strftime
-import waitress
-from logging.handlers import RotatingFileHandler
+
+
 
 from .modules.shared import (
-    app, get_timestamped_filename,
+    app
 )
 
 from .modules.models import (
     DashboardAPIKey, DashboardConfig, PeerShareLink,
-    PeerShareLinks, PeerJob, PeerJobs,
-    Log,
-    PeerJobLogger,
-    DashboardLogger,
-    WireguardConfigurations,
-    Configuration,
-    Peer,
-    APP_PREFIX,
+    PeerJob, Log, Configuration, Peer, APP_PREFIX
+
 )
 
 class ModelEncoder(JSONEncoder):
@@ -51,7 +40,9 @@ class CustomJsonEncoder(DefaultJSONProvider):
 
 app.json = CustomJsonEncoder(app)
 
-
+_, WG_CONF_PATH = DashboardConfig.GetConfig("Server", "wg_conf_path")
+_, app_ip = DashboardConfig.GetConfig("Server", "app_ip")
+_, app_port = DashboardConfig.GetConfig("Server", "app_port")
 
 
 CORS(app, resources={rf"{APP_PREFIX}/api/*": {
@@ -73,15 +64,14 @@ from .routes.api import backGroundThread, peerJobScheduleBackgroundThread
 #logger.setLevel(logging.INFO)
 #logger.addHandler(handler)
 
-AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
-AllPeerJobs: PeerJobs = PeerJobs()
-JobLogger: PeerJobLogger = PeerJobLogger()
-AllDashboardLogger: DashboardLogger = DashboardLogger()
-_, app_ip = DashboardConfig.GetConfig("Server", "app_ip")
-_, app_port = DashboardConfig.GetConfig("Server", "app_port")
-_, WG_CONF_PATH = DashboardConfig.GetConfig("Server", "wg_conf_path")
+#AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
+#AllPeerJobs: PeerJobs = PeerJobs()
+#JobLogger: PeerJobLogger = PeerJobLogger()
+#AllDashboardLogger: DashboardLogger = DashboardLogger()
 
-WireguardConfigurations: dict[str, Configuration] = {}
+
+
+
 
 
 
