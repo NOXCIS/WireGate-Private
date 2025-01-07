@@ -8,6 +8,7 @@ import json
 import tempfile
 import re
 from typing import Any, List
+
 from . config import (
     DASHBOARD_VERSION, CONFIGURATION_PATH, DASHBOARD_CONF,
     wgd_config_path,

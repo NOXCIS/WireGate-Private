@@ -1,7 +1,9 @@
 import os
 import socket
+
+
 # Import Enviorment
-DASHBOARD_VERSION = 'jiaotu-beta-dev-v0.2.2'
+DASHBOARD_VERSION = 'jiaotu-beta-dev-v0.2.3'
 DASHBOARD_MODE = None
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
 DB_PATH = os.path.join(CONFIGURATION_PATH, 'db')
@@ -16,10 +18,6 @@ TORRC_PATH = "/etc/tor/torrc"
 DNS_TORRC_PATH = "/etc/tor/dnstorrc"
 
 
-# Folder to save uploaded files
-UPLOAD_FOLDER = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), 'Downloads')
-)
 
 
 wgd_config_path = os.environ.get('WGD_CONF_PATH') or "/etc/wireguard"

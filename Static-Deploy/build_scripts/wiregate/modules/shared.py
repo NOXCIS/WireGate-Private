@@ -7,9 +7,6 @@ from datetime import datetime
 # Create Flask app
 app = Flask("WGDashboard", template_folder=os.path.abspath("./static/app/dist"))
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
-app.config['UPLOAD_FOLDER'] = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '../Downloads')
-)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.secret_key = secrets.token_urlsafe(420)
 
@@ -39,11 +36,6 @@ def ResponseObject(status=True, message=None, data=None):
     response.content_type = "application/json"
     return response
 
-
-
-
-def _strToBool(value: str) -> bool:
-    return value.lower() in ("yes", "true", "t", "1", 1)
 
 def get_timestamped_filename():
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')

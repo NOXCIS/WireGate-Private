@@ -255,13 +255,15 @@ chmod u+x wiregate.sh
     done
 
 
-if [[ "$WGD_TOR_PROXY" == "true" ]]; then
+
     sudo apk add --no-cache tor curl > /dev/null 2>&1
-    sed -i "s/^#\(proxy = 'socks5:\/\/wiregate:9053'\)/\1/" "$dnscrypt_conf"
     generate_vanguard_tor_ctrl_pass
     make_torrc
     make_dns_torrc
     run_tor_flux &
+
+if [[ "$WGD_TOR_PROXY" == "true" ]]; then
+    sed -i "s/^#\(proxy = 'socks5:\/\/wiregate:9053'\)/\1/" "$dnscrypt_conf"
     else
         sed -i "s/^\(proxy = 'socks5:\/\/wiregate:9053'\)/#\1/" "$dnscrypt_conf"
 fi
