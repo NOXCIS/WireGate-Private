@@ -13,10 +13,13 @@ app.config['UPLOAD_FOLDER'] = os.path.abspath(
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.secret_key = secrets.token_urlsafe(420)
 
-# Constants
-DASHBOARD_VERSION = 'jiaotu'
-CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
-DB_PATH = os.path.join(CONFIGURATION_PATH, 'db')
+from . config import (
+    DASHBOARD_VERSION,
+    CONFIGURATION_PATH,
+    DB_PATH
+)
+
+
 
 # Create DB directory if it doesn't exist
 if not os.path.isdir(DB_PATH):
