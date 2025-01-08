@@ -2,9 +2,12 @@
 import { ref, watch, onMounted } from 'vue'
 import { fetchGet, fetchPost } from '@/utilities/fetch.js'
 import { DashboardConfigurationStore } from "@/stores/DashboardConfigurationStore.js"
-
+import ProcessWidget from '@/components/ProcessWidget.vue'
 export default {
     name: 'TorConfiguration',
+    components: {
+        ProcessWidget
+    },
     setup() {
         const dashboardStore = DashboardConfigurationStore()
         const selectedConfig = ref('main')
@@ -202,6 +205,10 @@ ClientTransportPlugin ${plugin} exec /usr/local/bin/${plugin}`
 <template>
     <div class="container-fluid py-3">
         <div class="row">
+            <div class="col-12 mb-3">
+                <ProcessWidget />
+            </div>
+            
             <div class="col-12">
                 <div class="card shadow-sm">
                     <div class="card-header d-flex justify-content-between align-items-center">

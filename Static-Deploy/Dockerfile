@@ -43,7 +43,7 @@ RUN     venv/bin/pip install pyinstaller && \
         venv/bin/pyinstaller --clean --onefile --upx-dir=/usr/bin --name wiregate wiregate.py && \
         venv/bin/pyinstaller --clean --onefile --strip --upx-dir=/usr/bin --name vanguards vanguards.py 
 
-RUN     go build -buildmode=pie -ldflags="-s -w" -o torflux
+RUN     go build -buildmode=pie -ldflags="-X main.version=v1.0.0 -s -w" -o torflux
 
 # Stage 3: Final image
 FROM noxcis/hellpine:latest
