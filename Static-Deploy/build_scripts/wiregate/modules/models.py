@@ -1492,7 +1492,7 @@ class Peer:
                    keepalive: int) -> ResponseObject:
         if not self.configuration.getStatus():
             self.configuration.toggleConfiguration()
-
+        cmd_prefix = self.configuration.get_iface_proto()
         existingAllowedIps = [item for row in list(
             map(lambda x: [q.strip() for q in x.split(',')],
                 map(lambda y: y.allowed_ip,
@@ -1521,18 +1521,22 @@ class Peer:
                 with open(uid, "w+") as f:
                     f.write(preshared_key)
             newAllowedIPs = allowed_ip.replace(" ", "")
-            updateAllowedIp = subprocess.check_output(
-                f"wg set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f' preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
-                shell=True, stderr=subprocess.STDOUT)
+
+            cmd = (
+                    f"{cmd_prefix} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f' preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}")
+            updateAllowedIp = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
 
             if pskExist: os.remove(uid)
 
             if len(updateAllowedIp.decode().strip("\n")) != 0:
                 return ResponseObject(False,
                                       "Update peer failed when updating Allowed IPs")
-            saveConfig = subprocess.check_output(f"wg-quick save {self.configuration.Name}",
-                                                 shell=True, stderr=subprocess.STDOUT)
-            if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
+            
+            cmd = (
+                    f"{cmd_prefix}-quick save {self.configuration.Name}")
+            saveConfig = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+
+            if f"{cmd_prefix} showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
                 return ResponseObject(False,
                                       "Update peer failed when saving the configuration")
             sqlUpdate(
