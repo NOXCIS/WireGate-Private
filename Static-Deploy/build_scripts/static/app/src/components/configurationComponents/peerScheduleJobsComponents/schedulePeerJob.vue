@@ -1,6 +1,6 @@
 <script>
 import ScheduleDropdown from "@/components/configurationComponents/peerScheduleJobsComponents/scheduleDropdown.vue";
-import {ref} from "vue";
+import {ref, computed} from "vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import {fetchPost} from "@/utilities/fetch.js";
 import VueDatePicker from "@vuepic/vue-datepicker";
@@ -30,6 +30,8 @@ export default {
 	data(){
 		return {
 			inputType: undefined,
+			selectedDays: [],
+			timeIntervals: {}
 		}
 	},
 	watch:{
@@ -105,6 +107,40 @@ export default {
 		},
 		handleWeeklySelection(value) {
 			this.job.Value = value;
+		},
+		toggleDay(day) {
+			const index = this.selectedDays.indexOf(day);
+			if (index === -1) {
+				this.selectedDays.push(day);
+				this.timeIntervals[day] = { start: '00:00', end: '23:59' };
+			} else {
+				this.selectedDays.splice(index, 1);
+				delete this.timeIntervals[day];
+			}
+			this.updateJobValue();
+		},
+		updateTimeInterval(day, type, value) {
+			if (this.timeIntervals[day]) {
+				this.timeIntervals[day][type] = value;
+				this.updateJobValue();
+			}
+		},
+		updateJobValue() {
+			const formattedValue = this.selectedDays
+				.map(day => `${day}:${this.timeIntervals[day].start}-${this.timeIntervals[day].end}`)
+				.join(',');
+			this.job.Value = formattedValue;
+		},
+		parseExistingJobValue() {
+			if (this.job.Value && this.job.Field === 'weekly') {
+				const schedules = this.job.Value.split(',');
+				schedules.forEach(schedule => {
+					const [day, times] = schedule.split(':');
+					const [start, end] = times.split('-');
+					this.selectedDays.push(day);
+					this.timeIntervals[day] = { start, end };
+				});
+			}
 		}
 	},
 	computed: {
@@ -114,6 +150,9 @@ export default {
 		weeklyOptions() {
 			return this.dropdowns.Field.find(x => x.value === 'weekly')?.options || [];
 		}
+	},
+	mounted() {
+		this.parseExistingJobValue();
 	}
 }
 </script>
@@ -166,17 +205,32 @@ export default {
 					:dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
 				/>
 				
-				<select class="form-select form-select-sm form-control-dark rounded-3"
-						v-else-if="this.job.Field === 'weekly'"
-						:disabled="!edit"
-						v-model="this.job.Value"
-						style="width: auto; flex-grow: 1;">
-					<option v-for="option in weeklyOptions"
-							:key="option.value"
-							:value="option.value">
-						{{ option.label }}
-					</option>
-				</select>
+				<div v-if="this.job.Field === 'weekly'" class="weekly-schedule-container">
+					<div class="days-selection">
+						<div v-for="option in weeklyOptions" 
+							 :key="option.value"
+							 class="day-option"
+							 :class="{ selected: selectedDays.includes(option.value) }"
+							 @click="toggleDay(option.value)">
+							{{ option.label }}
+						</div>
+					</div>
+					
+					<div v-for="day in selectedDays" 
+						 :key="day" 
+						 class="time-intervals">
+						<span>{{ weeklyOptions.find(opt => opt.value === day).label }}</span>
+						<input type="time" 
+							   :value="timeIntervals[day].start"
+							   @input="e => updateTimeInterval(day, 'start', e.target.value)"
+							   :disabled="!edit">
+						<span>to</span>
+						<input type="time" 
+							   :value="timeIntervals[day].end"
+							   @input="e => updateTimeInterval(day, 'end', e.target.value)"
+							   :disabled="!edit">
+					</div>
+				</div>
 				
 				<input class="form-control form-control-sm form-control-dark rounded-3 flex-grow-1" 
 					   :disabled="!edit"
@@ -247,6 +301,49 @@ select {
 select:disabled {
 	border-color: transparent;
 	background-color: rgba(13, 110, 253, 0.09);
+	color: #0d6efd;
+}
+
+.weekly-schedule-container {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	padding: 1rem;
+}
+
+.days-selection {
+	display: flex;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.day-option {
+	padding: 0.25rem 0.5rem;
+	border: 1px solid #ccc;
+	border-radius: 0.25rem;
+	cursor: pointer;
+}
+
+.day-option.selected {
+	background-color: #0d6efd;
+	color: white;
+}
+
+.time-intervals {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.time-intervals input[type="time"] {
+	padding: 0.25rem;
+	border-radius: 0.25rem;
+	border: 1px solid #ccc;
+}
+
+.time-intervals input[type="time"]:disabled {
+	background-color: rgba(13, 110, 253, 0.09);
+	border-color: transparent;
 	color: #0d6efd;
 }
 

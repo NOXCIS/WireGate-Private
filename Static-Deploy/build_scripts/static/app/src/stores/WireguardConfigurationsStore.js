@@ -37,7 +37,7 @@ export const WireguardConfigurationsStore = defineStore('WireguardConfigurations
 					{
 						display: GetLocale("Weekly Schedule"),
 						value: "weekly",
-						type: 'select',
+						type: 'multiDayTime',
 						options: [
 							{ label: GetLocale("Monday"), value: "0" },
 							{ label: GetLocale("Tuesday"), value: "1" },

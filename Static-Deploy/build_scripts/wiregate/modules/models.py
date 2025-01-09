@@ -2066,65 +2066,62 @@ class PeerJobs:
             return False, str(e)
 
     def runJob(self):
-        """
-        Execute scheduled jobs for peers based on configured conditions.
-        Checks each job's conditions and performs the specified action (restrict/delete) if met.
-        Jobs are deleted after successful execution or if their configuration/peer no longer exists.
-        """
-        needToDelete = []  # Track jobs that need to be deleted
+        needToDelete = []
         for job in self.Jobs:
-            # Get the WireGuard configuration for this job
             c = WireguardConfigurations.get(job.Configuration)
             if c is not None:
-                # Try to find the peer in the configuration
                 f, fp = c.searchPeer(job.Peer)
                 if f:
-                    # Handle data usage metrics
                     if job.Field in ["total_receive", "total_sent", "total_data"]:
-                        s = job.Field.split("_")[1]  # Get metric type (receive/sent/data)
-                        # Calculate total usage (total + cumulative)
+                        s = job.Field.split("_")[1]
                         x: float = getattr(fp, f"total_{s}") + getattr(fp, f"cumu_{s}")
                         y: float = float(job.Value)
-                    elif job.Field == "weekly":
-                        # Get current weekday (0-6, where 0 is Monday)
-                        x: int = datetime.now().weekday()
-                        # Convert string value to int (assuming value is 0-6)
-                        y: int = int(job.Value)
-                        # Compare current weekday with scheduled day
                         runAction: bool = self.__runJob_Compare(x, y, job.Operator)
+                    elif job.Field == "weekly":
+                        current_time = datetime.now()
+                        current_weekday = str(current_time.weekday())
+                        current_time_str = current_time.strftime('%H:%M')
+                        
+                        # Parse schedules
+                        schedules = job.Value.split(',')
+                        runAction = False
+                        
+                        for schedule in schedules:
+                            day = schedule.split(':')[0].strip()
+                            times = ':'.join(schedule.split(':')[1:])
+                            start_time, end_time = times.split('-')
+                            
+                            # Clean up times to HH:MM format
+                            start_time = ':'.join(start_time.strip().split(':')[:2])
+                            end_time = ':'.join(end_time.strip().split(':')[:2])
+                            
+                            if day == current_weekday and start_time <= current_time_str <= end_time:
+                                runAction = True
+                                break
                     else:
-                        # Handle date-based conditions
                         x: datetime = datetime.now()
                         y: datetime = datetime.strptime(job.Value, "%Y-%m-%d %H:%M:%S")
+                        runAction: bool = self.__runJob_Compare(x, y, job.Operator)
 
-                    # Compare values based on operator
-                    runAction: bool = self.__runJob_Compare(x, y, job.Operator)
                     if runAction:
                         s = False
-                        # Execute the configured action
                         if job.Action == "restrict":
                             s = c.restrictPeers([fp.id]).get_json()
                         elif job.Action == "delete":
                             s = c.deletePeers([fp.id]).get_json()
 
-                        # Log results and mark for deletion if successful
                         if s['status'] is True:
                             JobLogger.log(job.JobID, s["status"],
-                                          f"Peer {fp.id} from {c.Name} is successfully {job.Action}ed."
-                                          )
+                                        f"Peer {fp.id} from {c.Name} is successfully {job.Action}ed.")
                             needToDelete.append(job)
                         else:
                             JobLogger.log(job.JobID, s["status"],
-                                          f"Peer {fp.id} from {c.Name} failed {job.Action}ed."
-                                          )
+                                        f"Peer {fp.id} from {c.Name} failed {job.Action}ed.")
                 else:
-                    # Peer not found, mark job for deletion
                     needToDelete.append(job)
             else:
-                # Configuration not found, mark job for deletion
                 needToDelete.append(job)
 
-        # Clean up completed/invalid jobs
         for j in needToDelete:
             self.deleteJob(j)
 
