@@ -33,27 +33,45 @@ export const WireguardConfigurationsStore = defineStore('WireguardConfigurations
 						display: GetLocale("Date"),
 						value: "date",
 						type: 'date'
+					},
+					{
+						display: GetLocale("Weekly Schedule"),
+						value: "weekly",
+						type: 'select',
+						options: [
+							{ label: GetLocale("Monday"), value: "0" },
+							{ label: GetLocale("Tuesday"), value: "1" },
+							{ label: GetLocale("Wednesday"), value: "2" },
+							{ label: GetLocale("Thursday"), value: "3" },
+							{ label: GetLocale("Friday"), value: "4" },
+							{ label: GetLocale("Saturday"), value: "5" },
+							{ label: GetLocale("Sunday"), value: "6" }
+						]
 					}
 				],
 				Operator: [
-					// {
-					// 	display: "equal",
-					// 	value: "eq"
-					// },
-					// {
-					// 	display: "not equal",
-					// 	value: "neq"
-					// },
+					{
+						display: GetLocale("equal to"),
+						value: "eq"
+					},
+					{
+						display: GetLocale("not equal to"),
+						value: "neq"
+					},
 					{
 						display: GetLocale("larger than"),
 						value: "lgt"
 					},
-					// {
-					// 	display: "less than",
-					// 	value: "lst"
-					// },
+					{
+						display: GetLocale("less than"),
+						value: "lst"
+					}
 				],
 				Action: [
+					{
+						display: GetLocale("Allow Peer"),
+						value: "allow"
+					},
 					{
 						display: GetLocale("Restrict Peer"),
 						value: "restrict"

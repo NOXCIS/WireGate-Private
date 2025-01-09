@@ -102,8 +102,19 @@ export default {
 			if(modelData){
 				this.job.Value = dayjs(modelData).format("YYYY-MM-DD HH:mm:ss");
 			}
+		},
+		handleWeeklySelection(value) {
+			this.job.Value = value;
 		}
 	},
+	computed: {
+		currentFieldType() {
+			return this.dropdowns.Field.find(x => x.value === this.job.Field)?.type || 'text';
+		},
+		weeklyOptions() {
+			return this.dropdowns.Field.find(x => x.value === 'weekly')?.options || [];
+		}
+	}
 }
 </script>
 
@@ -145,7 +156,8 @@ export default {
 					:is24="true"
 					:min-date="new Date()"
 					:model-value="this.job.Value"
-					@update:model-value="this.parseTime" time-picker-inline
+					@update:model-value="this.parseTime"
+					time-picker-inline
 					format="yyyy-MM-dd HH:mm:ss"
 					preview-format="yyyy-MM-dd HH:mm:ss"
 					:clearable="false"
@@ -154,11 +166,23 @@ export default {
 					:dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
 				/>
 				
+				<select class="form-select form-select-sm form-control-dark rounded-3"
+						v-else-if="this.job.Field === 'weekly'"
+						:disabled="!edit"
+						v-model="this.job.Value"
+						style="width: auto; flex-grow: 1;">
+					<option v-for="option in weeklyOptions"
+							:key="option.value"
+							:value="option.value">
+						{{ option.label }}
+					</option>
+				</select>
+				
 				<input class="form-control form-control-sm form-control-dark rounded-3 flex-grow-1" 
-				       :disabled="!edit"
-				       v-else
-				       v-model="this.job.Value"
-				       style="width: auto">
+					   :disabled="!edit"
+					   v-else
+					   v-model="this.job.Value"
+					   style="width: auto">
 				<samp>
 					{{this.dropdowns.Field.find(x => x.value === this.job.Field)?.unit}} {
 				</samp>
@@ -214,6 +238,16 @@ input:disabled{
 	flex-grow: 1;
 	--dp-input-padding: 2.5px 30px 2.5px 12px;
 	--dp-border-radius: 0.5rem;
+}
+
+select {
+	padding: 0.1rem 0.4rem;
+}
+
+select:disabled {
+	border-color: transparent;
+	background-color: rgba(13, 110, 253, 0.09);
+	color: #0d6efd;
 }
 
 </style>

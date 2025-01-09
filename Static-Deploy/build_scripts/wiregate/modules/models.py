@@ -2066,27 +2066,48 @@ class PeerJobs:
             return False, str(e)
 
     def runJob(self):
-        needToDelete = []
+        """
+        Execute scheduled jobs for peers based on configured conditions.
+        Checks each job's conditions and performs the specified action (restrict/delete) if met.
+        Jobs are deleted after successful execution or if their configuration/peer no longer exists.
+        """
+        needToDelete = []  # Track jobs that need to be deleted
         for job in self.Jobs:
+            # Get the WireGuard configuration for this job
             c = WireguardConfigurations.get(job.Configuration)
             if c is not None:
+                # Try to find the peer in the configuration
                 f, fp = c.searchPeer(job.Peer)
                 if f:
+                    # Handle data usage metrics
                     if job.Field in ["total_receive", "total_sent", "total_data"]:
-                        s = job.Field.split("_")[1]
+                        s = job.Field.split("_")[1]  # Get metric type (receive/sent/data)
+                        # Calculate total usage (total + cumulative)
                         x: float = getattr(fp, f"total_{s}") + getattr(fp, f"cumu_{s}")
                         y: float = float(job.Value)
+                    elif job.Field == "weekly":
+                        # Get current weekday (0-6, where 0 is Monday)
+                        x: int = datetime.now().weekday()
+                        # Convert string value to int (assuming value is 0-6)
+                        y: int = int(job.Value)
+                        # Compare current weekday with scheduled day
+                        runAction: bool = self.__runJob_Compare(x, y, job.Operator)
                     else:
+                        # Handle date-based conditions
                         x: datetime = datetime.now()
                         y: datetime = datetime.strptime(job.Value, "%Y-%m-%d %H:%M:%S")
+
+                    # Compare values based on operator
                     runAction: bool = self.__runJob_Compare(x, y, job.Operator)
                     if runAction:
                         s = False
+                        # Execute the configured action
                         if job.Action == "restrict":
                             s = c.restrictPeers([fp.id]).get_json()
                         elif job.Action == "delete":
                             s = c.deletePeers([fp.id]).get_json()
 
+                        # Log results and mark for deletion if successful
                         if s['status'] is True:
                             JobLogger.log(job.JobID, s["status"],
                                           f"Peer {fp.id} from {c.Name} is successfully {job.Action}ed."
@@ -2097,20 +2118,47 @@ class PeerJobs:
                                           f"Peer {fp.id} from {c.Name} failed {job.Action}ed."
                                           )
                 else:
+                    # Peer not found, mark job for deletion
                     needToDelete.append(job)
             else:
+                # Configuration not found, mark job for deletion
                 needToDelete.append(job)
+
+        # Clean up completed/invalid jobs
         for j in needToDelete:
             self.deleteJob(j)
 
-    def __runJob_Compare(self, x: float | datetime, y: float | datetime, operator: str):
-        if operator == "eq":
+    def __runJob_Compare(self, x: float | datetime | int, y: float | datetime | int, operator: str):
+        """
+        Compare two values based on the specified operator.
+        
+        Args:
+            x: First value (current metric/date/weekday)
+            y: Second value (threshold/target date/target weekday)
+            operator: Comparison operator (eq, neq, lgt, lst)
+            
+        Returns:
+            bool: Result of the comparison
+        """
+        # Handle weekly schedule comparison
+        if isinstance(x, int) and isinstance(y, int):
+            if operator == "eq":  # Exactly on this day
+                return x == y
+            if operator == "neq":  # Any day except this day
+                return x != y
+            if operator == "lgt":  # After this day in the week
+                return (x - y) % 7 > 0
+            if operator == "lst":  # Before this day in the week
+                return (y - x) % 7 > 0
+    
+        # Handle existing date and float comparisons
+        if operator == "eq":  # Equal
             return x == y
-        if operator == "neq":
+        if operator == "neq":  # Not equal
             return x != y
-        if operator == "lgt":
+        if operator == "lgt":  # Greater than
             return x > y
-        if operator == "lst":
+        if operator == "lst":  # Less than
             return x < y
 
 class PeerShareLink:

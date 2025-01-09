@@ -1449,7 +1449,7 @@ def API_getDashboardProto():
 @api_blueprint.post('/savePeerScheduleJob/')
 def API_savePeerScheduleJob():
     data = request.json
-    if "Job" not in data.keys() not in WireguardConfigurations.keys():
+    if "Job" not in data.keys():
         return ResponseObject(False, "Please specify job")
     job: dict = data['Job']
     if "Peer" not in job.keys() or "Configuration" not in job.keys():
@@ -1458,6 +1458,15 @@ def API_savePeerScheduleJob():
     f, fp = configuration.searchPeer(job['Peer'])
     if not f:
         return ResponseObject(False, "Peer does not exist")
+
+    # Handle weekly schedule value validation
+    if job['Field'] == 'weekly':
+        try:
+            weekday = int(job['Value'])
+            if weekday < 0 or weekday > 6:
+                return ResponseObject(False, "Weekly schedule must be between 0 (Monday) and 6 (Sunday)")
+        except ValueError:
+            return ResponseObject(False, "Invalid weekly schedule value")
 
     s, p = AllPeerJobs.saveJob(PeerJob(
         job['JobID'], job['Configuration'], job['Peer'], job['Field'], job['Operator'], job['Value'],
@@ -1470,7 +1479,7 @@ def API_savePeerScheduleJob():
 @api_blueprint.post('/deletePeerScheduleJob/')
 def API_deletePeerScheduleJob():
     data = request.json
-    if "Job" not in data.keys() not in WireguardConfigurations.keys():
+    if "Job" not in data.keys():
         return ResponseObject(False, "Please specify job")
     job: dict = data['Job']
     if "Peer" not in job.keys() or "Configuration" not in job.keys():
@@ -1953,4 +1962,4 @@ def peerJobScheduleBackgroundThread():
         time.sleep(10)
         while True:
             AllPeerJobs.runJob()
-            time.sleep(180)
+            time.sleep(15)
