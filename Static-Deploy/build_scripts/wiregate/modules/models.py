@@ -2070,60 +2070,78 @@ class PeerJobs:
         for job in self.Jobs:
             c = WireguardConfigurations.get(job.Configuration)
             if c is not None:
-                f, fp = c.searchPeer(job.Peer)
-                if f:
-                    if job.Field in ["total_receive", "total_sent", "total_data"]:
-                        s = job.Field.split("_")[1]
-                        x: float = getattr(fp, f"total_{s}") + getattr(fp, f"cumu_{s}")
-                        y: float = float(job.Value)
-                        runAction: bool = self.__runJob_Compare(x, y, job.Operator)
-                    elif job.Field == "weekly":
-                        current_time = datetime.now()
-                        current_weekday = str(current_time.weekday())
-                        current_time_str = current_time.strftime('%H:%M')
+                if job.Field == "weekly":
+                    current_time = datetime.now()
+                    current_weekday = str(current_time.weekday())
+                    current_time_str = current_time.strftime('%H:%M')
+                    
+                    schedules = job.Value.split(',')
+                    should_restrict = False
+                    
+                    for schedule in schedules:
+                        day = schedule.split(':')[0].strip()
+                        times = ':'.join(schedule.split(':')[1:])
+                        start_time, end_time = times.split('-')
                         
-                        # Parse schedules
-                        schedules = job.Value.split(',')
-                        runAction = False
+                        start_time = ':'.join(start_time.strip().split(':')[:2])
+                        end_time = ':'.join(end_time.strip().split(':')[:2])
                         
-                        for schedule in schedules:
-                            day = schedule.split(':')[0].strip()
-                            times = ':'.join(schedule.split(':')[1:])
-                            start_time, end_time = times.split('-')
-                            
-                            # Clean up times to HH:MM format
-                            start_time = ':'.join(start_time.strip().split(':')[:2])
-                            end_time = ':'.join(end_time.strip().split(':')[:2])
-                            
-                            if day == current_weekday and start_time <= current_time_str <= end_time:
-                                runAction = True
-                                break
-                    else:
-                        x: datetime = datetime.now()
-                        y: datetime = datetime.strptime(job.Value, "%Y-%m-%d %H:%M:%S")
-                        runAction: bool = self.__runJob_Compare(x, y, job.Operator)
-
-                    if runAction:
-                        s = False
-                        if job.Action == "restrict":
-                            s = c.restrictPeers([fp.id]).get_json()
-                        elif job.Action == "delete":
-                            s = c.deletePeers([fp.id]).get_json()
-
+                        if day == current_weekday and start_time <= current_time_str <= end_time:
+                            should_restrict = True
+                            break
+                    
+                    # Get restricted peers directly from SQL
+                    restricted_peers = sqlSelect(f"SELECT id FROM '{c.Name}_restrict_access'").fetchall()
+                    peer_in_restricted = job.Peer in [p[0] for p in restricted_peers]
+                    
+                    if should_restrict and not peer_in_restricted:
+                        s = c.restrictPeers([job.Peer]).get_json()
                         if s['status'] is True:
                             JobLogger.log(job.JobID, s["status"],
-                                        f"Peer {fp.id} from {c.Name} is successfully {job.Action}ed.")
-                            needToDelete.append(job)
-                        else:
+                                      f"Peer {job.Peer} from {c.Name} is successfully restricted (weekly schedule)")
+                    elif not should_restrict and peer_in_restricted:
+                        s = c.allowAccessPeers([job.Peer]).get_json()
+                        if s['status'] is True:
                             JobLogger.log(job.JobID, s["status"],
-                                        f"Peer {fp.id} from {c.Name} failed {job.Action}ed.")
+                                      f"Peer {job.Peer} from {c.Name} is successfully unrestricted (weekly schedule)")
+                
                 else:
-                    needToDelete.append(job)
+                    # Handle non-weekly jobs as before
+                    f, fp = c.searchPeer(job.Peer)
+                    if f:
+                        if job.Field in ["total_receive", "total_sent", "total_data"]:
+                            s = job.Field.split("_")[1]
+                            x: float = getattr(fp, f"total_{s}") + getattr(fp, f"cumu_{s}")
+                            y: float = float(job.Value)
+                            runAction: bool = self.__runJob_Compare(x, y, job.Operator)
+                        else:
+                            x: datetime = datetime.now()
+                            y: datetime = datetime.strptime(job.Value, "%Y-%m-%d %H:%M:%S")
+                            runAction: bool = self.__runJob_Compare(x, y, job.Operator)
+
+                        if runAction:
+                            s = False
+                            if job.Action == "restrict":
+                                s = c.restrictPeers([fp.id]).get_json()
+                            elif job.Action == "delete":
+                                s = c.deletePeers([fp.id]).get_json()
+
+                            if s['status'] is True:
+                                JobLogger.log(job.JobID, s["status"],
+                                          f"Peer {fp.id} from {c.Name} is successfully {job.Action}ed.")
+                                needToDelete.append(job)
+                            else:
+                                JobLogger.log(job.JobID, s["status"],
+                                          f"Peer {fp.id} from {c.Name} failed {job.Action}ed.")
+                    else:
+                        needToDelete.append(job)
             else:
                 needToDelete.append(job)
 
+        # Only delete non-weekly jobs
         for j in needToDelete:
-            self.deleteJob(j)
+            if j.Field != "weekly":
+                self.deleteJob(j)
 
     def __runJob_Compare(self, x: float | datetime | int, y: float | datetime | int, operator: str):
         """
