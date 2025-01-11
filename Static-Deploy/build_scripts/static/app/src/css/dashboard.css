@@ -1616,11 +1616,12 @@ pre.index-alert {
 
 .dashboardModal{
     min-height: calc(100% - 1.75rem * 2); 
-    width: 700px
+    width: 800px;
 }
 
 .dashboardModal > .card{
     margin: 1.75rem;
+    max-width: 100%;
 }
 
 .zoom-enter-active,
@@ -1739,4 +1740,24 @@ pre.index-alert {
 
 samp{
     word-wrap: anywhere;
+}
+
+/* Weekly schedule specific styles */
+.weekly-schedule-container {
+    width: 100%;
+    margin-top: 1rem;
+}
+
+@media screen and (max-width: 576px) {
+    .dashboardModal {
+        width: 100% !important;
+    }
+    
+    .dashboardModal > .card {
+        margin: 0.5rem !important;
+    }
+    
+    .weekly-schedule-container {
+        margin-top: 0.5rem;
+    }
 }

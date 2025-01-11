@@ -6,10 +6,11 @@ import {fetchPost} from "@/utilities/fetch.js";
 import VueDatePicker from "@vuepic/vue-datepicker";
 import dayjs from "dayjs";
 import LocaleText from "@/components/text/localeText.vue";
+import WeeklySchedule from "@/components/configurationComponents/peerScheduleJobsComponents/weeklySchedule.vue";
 
 export default {
 	name: "schedulePeerJob",
-	components: {LocaleText, VueDatePicker, ScheduleDropdown},
+	components: {LocaleText, VueDatePicker, ScheduleDropdown, WeeklySchedule},
 	props: {
 		dropdowns: Array[Object],
 		pjob: Object,
@@ -119,7 +120,7 @@ export default {
 			}
 			this.updateJobValue();
 		},
-		updateTimeInterval(day, type, value) {
+		updateTimeInterval({ day, type, value }) {
 			if (this.timeIntervals[day]) {
 				this.timeIntervals[day][type] = value;
 				this.updateJobValue();
@@ -127,7 +128,12 @@ export default {
 		},
 		updateJobValue() {
 			const formattedValue = this.selectedDays
-				.map(day => `${day}:${this.timeIntervals[day].start}-${this.timeIntervals[day].end}`)
+				.map(day => {
+					const interval = this.timeIntervals[day];
+					const start = interval.start.padStart(5, '0');
+					const end = interval.end.padStart(5, '0');
+					return `${day}:${start}-${end}`;
+				})
 				.join(',');
 			this.job.Value = formattedValue;
 		},
@@ -141,6 +147,23 @@ export default {
 					this.timeIntervals[day] = { start, end };
 				});
 			}
+		},
+		formatTime(time) {
+			const [hours, minutes] = time.split(':').map(Number);
+			return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+		},
+		timeToMinutes(time) {
+			const [hours, minutes] = time.split(':').map(Number);
+			return hours * 60 + minutes;
+		},
+		minutesToTime(minutes) {
+			const hours = Math.floor(minutes / 60);
+			const mins = minutes % 60;
+			return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+		},
+		updateTimeFromSlider(day, type, value) {
+			const timeString = this.minutesToTime(value);
+			this.updateTimeInterval(day, type, timeString);
 		}
 	},
 	computed: {
@@ -158,118 +181,109 @@ export default {
 </script>
 
 <template>
-	<div class="card shadow-sm rounded-3 mb-2" :class="{'border-warning-subtle': this.newJob}">
-		<div class="card-header bg-transparent text-muted border-0">
-			<small class="d-flex" v-if="!this.newJob">
-				<strong class="me-auto">
-					<LocaleText t="Job ID"></LocaleText>
-				</strong>
-				<samp>{{this.job.JobID}}</samp>
-			</small>
-			<small v-else><span class="badge text-bg-warning">
-				<LocaleText t="Unsaved Job"></LocaleText>
-			</span></small>
-		</div>
-		<div class="card-body pt-1" style="font-family: var(--bs-font-monospace)">
-			<div class="d-flex gap-2 align-items-center mb-2">
-				<samp>
-					<LocaleText t="if"></LocaleText>
-				</samp>
-				<ScheduleDropdown
-					:edit="edit"
-					:options="this.dropdowns.Field"
-					:data="this.job.Field"
-					@update="(value) => {this.job.Field = value}"
-				></ScheduleDropdown>
-				<samp>
-					<LocaleText t="is"></LocaleText>
-				</samp>
-				<ScheduleDropdown
-					:edit="edit"
-					:options="this.dropdowns.Operator"
-					:data="this.job.Operator"
-					@update="(value) => this.job.Operator = value"
-				></ScheduleDropdown>
-
-				<VueDatePicker
-					:is24="true"
-					:min-date="new Date()"
-					:model-value="this.job.Value"
-					@update:model-value="this.parseTime"
-					time-picker-inline
-					format="yyyy-MM-dd HH:mm:ss"
-					preview-format="yyyy-MM-dd HH:mm:ss"
-					:clearable="false"
-					:disabled="!edit"
-					v-if="this.job.Field === 'date'"
-					:dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
-				/>
-				
-				<div v-if="this.job.Field === 'weekly'" class="weekly-schedule-container">
-					<div class="days-selection">
-						<div v-for="option in weeklyOptions" 
-							 :key="option.value"
-							 class="day-option"
-							 :class="{ selected: selectedDays.includes(option.value) }"
-							 @click="toggleDay(option.value)">
-							{{ option.label }}
-						</div>
-					</div>
+	<div>
+		<!-- Main Schedule Job Card -->
+		<div class="card shadow-sm rounded-3 mb-2" :class="{'border-warning-subtle': this.newJob}">
+			<div class="card-header bg-transparent text-muted border-0">
+				<small class="d-flex" v-if="!this.newJob">
+					<strong class="me-auto">
+						<LocaleText t="Job ID"></LocaleText>
+					</strong>
+					<samp>{{this.job.JobID}}</samp>
+				</small>
+				<small v-else><span class="badge text-bg-warning">
+					<LocaleText t="Unsaved Job"></LocaleText>
+				</span></small>
+			</div>
+			<div class="card-body pt-1" style="font-family: var(--bs-font-monospace)">
+				<div class="d-flex gap-2 align-items-center mb-2">
+					<samp><LocaleText t="if"></LocaleText></samp>
+					<ScheduleDropdown
+						:edit="edit"
+						:options="this.dropdowns.Field"
+						:data="this.job.Field"
+						@update="(value) => {this.job.Field = value}"
+					></ScheduleDropdown>
+					<samp><LocaleText t="is"></LocaleText></samp>
 					
-					<div v-for="day in selectedDays" 
-						 :key="day" 
-						 class="time-intervals">
-						<span>{{ weeklyOptions.find(opt => opt.value === day).label }}</span>
-						<input type="time" 
-							   :value="timeIntervals[day].start"
-							   @input="e => updateTimeInterval(day, 'start', e.target.value)"
-							   :disabled="!edit">
-						<span>to</span>
-						<input type="time" 
-							   :value="timeIntervals[day].end"
-							   @input="e => updateTimeInterval(day, 'end', e.target.value)"
-							   :disabled="!edit">
-					</div>
+					<!-- Hide operator for weekly schedule -->
+					<template v-if="this.job.Field !== 'weekly'">
+						<ScheduleDropdown
+							:edit="edit"
+							:options="this.dropdowns.Operator"
+							:data="this.job.Operator"
+							@update="(value) => this.job.Operator = value"
+						></ScheduleDropdown>
+					</template>
+
+					<!-- Date Picker -->
+					<VueDatePicker v-if="this.job.Field === 'date'"
+						:is24="true"
+						:min-date="new Date()"
+						:model-value="this.job.Value"
+						@update:model-value="this.parseTime"
+						time-picker-inline
+						format="yyyy-MM-dd HH:mm:ss"
+						preview-format="yyyy-MM-dd HH:mm:ss"
+						:clearable="false"
+						:disabled="!edit"
+						:dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
+					/>
+					
+					<!-- Regular input for non-weekly/date fields -->
+					<input v-if="this.job.Field !== 'weekly' && this.job.Field !== 'date'"
+						class="form-control form-control-sm form-control-dark rounded-3 flex-grow-1" 
+						:disabled="!edit"
+						v-model="this.job.Value"
+						style="width: auto">
+						
+					<samp>{{this.dropdowns.Field.find(x => x.value === this.job.Field)?.unit}} {</samp>
 				</div>
 				
-				<input class="form-control form-control-sm form-control-dark rounded-3 flex-grow-1" 
-					   :disabled="!edit"
-					   v-else
-					   v-model="this.job.Value"
-					   style="width: auto">
-				<samp>
-					{{this.dropdowns.Field.find(x => x.value === this.job.Field)?.unit}} {
-				</samp>
-			</div>
-			<div class="px-5 d-flex gap-2 align-items-center">
-				<samp><LocaleText t="then"></LocaleText></samp>
-				<ScheduleDropdown
-					:edit="edit"
-					:options="this.dropdowns.Action"
-					:data="this.job.Action"
-					@update="(value) => this.job.Action = value"
-				></ScheduleDropdown>
-			</div>
-			<div class="d-flex gap-3">
-				<samp>}</samp>
-				<div class="ms-auto d-flex gap-3" v-if="!this.edit">
-					<a role="button"
-					   class="ms-auto text-decoration-none"
-					   @click="this.edit = true">[E] <LocaleText t="Edit"></LocaleText></a>
-					<a role="button"
-					   @click="this.delete()"
-					   class=" text-danger text-decoration-none">[D] <LocaleText t="Delete"></LocaleText></a>
+				<!-- Action section -->
+				<div class="px-5 d-flex gap-2 align-items-center">
+					<samp><LocaleText t="then"></LocaleText></samp>
+					<ScheduleDropdown
+						:edit="edit"
+						:options="this.dropdowns.Action"
+						:data="this.job.Action"
+						@update="(value) => this.job.Action = value"
+					></ScheduleDropdown>
 				</div>
-				<div class="ms-auto d-flex gap-3" v-else>
-					<a role="button"
-					   class="text-secondary text-decoration-none"
-					   @click="this.reset()">[C] <LocaleText t="Cancel"></LocaleText></a>
-					<a role="button"
-					   class="text-primary ms-auto text-decoration-none"
-					   @click="this.save()">[S] <LocaleText t="Save"></LocaleText></a>
+				
+				<!-- Footer section -->
+				<div class="d-flex gap-3">
+					<samp>}</samp>
+					<div class="ms-auto d-flex gap-3" v-if="!this.edit">
+						<a role="button"
+						   class="ms-auto text-decoration-none"
+						   @click="this.edit = true">[E] <LocaleText t="Edit"></LocaleText></a>
+						<a role="button"
+						   @click="this.delete()"
+						   class=" text-danger text-decoration-none">[D] <LocaleText t="Delete"></LocaleText></a>
+					</div>
+					<div class="ms-auto d-flex gap-3" v-else>
+						<a role="button"
+						   class="text-secondary text-decoration-none"
+						   @click="this.reset()">[C] <LocaleText t="Cancel"></LocaleText></a>
+						<a role="button"
+						   class="text-primary ms-auto text-decoration-none"
+						   @click="this.save()">[S] <LocaleText t="Save"></LocaleText></a>
+					</div>
 				</div>
 			</div>
 		</div>
+
+		<!-- Weekly Schedule Component (outside main card) -->
+		<WeeklySchedule
+			v-if="this.job.Field === 'weekly'"
+			:edit="edit"
+			:weekly-options="weeklyOptions"
+			:selected-days="selectedDays"
+			:time-intervals="timeIntervals"
+			@update:time-interval="updateTimeInterval"
+			@update:toggle-day="toggleDay"
+		/>
 	</div>
 </template>
 
@@ -305,46 +319,144 @@ select:disabled {
 }
 
 .weekly-schedule-container {
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
 	padding: 1rem;
+	background: var(--bs-dark);
+	border-radius: 0.5rem;
+}
+
+.schedule-layout {
+	display: flex;
+	gap: 2rem;
 }
 
 .days-selection {
 	display: flex;
+	flex-direction: column;
 	gap: 0.5rem;
-	flex-wrap: wrap;
+	min-width: 120px;
 }
 
 .day-option {
-	padding: 0.25rem 0.5rem;
-	border: 1px solid #ccc;
+	padding: 0.5rem 1rem;
+	border: 1px solid #2c3034;
 	border-radius: 0.25rem;
 	cursor: pointer;
+	text-align: center;
+	transition: all 0.2s ease;
 }
 
 .day-option.selected {
 	background-color: #0d6efd;
 	color: white;
+	border-color: #0d6efd;
 }
 
-.time-intervals {
+.day-option.muted {
+	opacity: 0.5;
+}
+
+.time-settings {
+	flex-grow: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.time-interval-row {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	padding: 0.5rem;
+	background: #2c3034;
+	border-radius: 0.5rem;
+}
+
+.day-label {
+	min-width: 100px;
+	font-weight: 500;
+}
+
+.time-controls {
+	flex-grow: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.time-inputs {
+	display: flex;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.time-input-group {
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
 }
 
-.time-intervals input[type="time"] {
+.time-input {
+	width: 85px;
 	padding: 0.25rem;
+	border: 1px solid #373b3e;
 	border-radius: 0.25rem;
-	border: 1px solid #ccc;
+	font-size: 0.8rem;
+	background: #212529;
+	color: #fff;
 }
 
-.time-intervals input[type="time"]:disabled {
+.time-input:disabled {
 	background-color: rgba(13, 110, 253, 0.09);
-	border-color: transparent;
 	color: #0d6efd;
+	border-color: transparent;
+}
+
+.slider-wrapper {
+	position: relative;
+	height: 40px;
+	padding: 10px 0;
+}
+
+.time-slider {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 100%;
+	-webkit-appearance: none;
+	pointer-events: none;
+	background: transparent;
+	z-index: 3;
+}
+
+.time-slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	pointer-events: auto;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #0d6efd;
+	cursor: pointer;
+	border: none;
+}
+
+.time-slider:disabled::-webkit-slider-thumb {
+	background: rgba(13, 110, 253, 0.5);
+	cursor: not-allowed;
+}
+
+.time-slider::-webkit-slider-runnable-track {
+	-webkit-appearance: none;
+	background: transparent;
+}
+
+.slider-track {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	height: 4px;
+	width: 100%;
+	background: #373b3e;
+	border-radius: 2px;
 }
 
 </style>
