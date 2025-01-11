@@ -138,11 +138,32 @@ export default {
 			this.job.Value = formattedValue;
 		},
 		parseExistingJobValue() {
+			console.log('Parsing existing job value:', {
+				jobValue: this.job.Value,
+				jobField: this.job.Field
+			});
+
 			if (this.job.Value && this.job.Field === 'weekly') {
+				// Clear existing arrays before parsing
+				this.selectedDays = [];
+				this.timeIntervals = {};
+				
 				const schedules = this.job.Value.split(',');
+				console.log('Parsed schedules:', schedules);
+
 				schedules.forEach(schedule => {
-					const [day, times] = schedule.split(':');
-					const [start, end] = times.split('-');
+					// First split to get the day
+					const [day, ...timeparts] = schedule.split(':');
+					// Rejoin the time parts and split on the hyphen
+					const timeStr = timeparts.join(':');  // Handles cases like "05:29-18:11"
+					const [start, end] = timeStr.split('-');
+					
+					console.log('Processing schedule entry:', {
+						day,
+						start,
+						end
+					});
+
 					this.selectedDays.push(day);
 					this.timeIntervals[day] = { start, end };
 				});
