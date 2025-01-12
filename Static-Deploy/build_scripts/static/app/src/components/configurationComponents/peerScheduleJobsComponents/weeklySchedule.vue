@@ -63,55 +63,82 @@ export default {
     },
     getTimeValue(day, type) {
       return this.timeIntervals[day]?.[type] || '00:00';
+    },
+    formatTimeMarker(minutes) {
+      const hours = Math.floor(minutes / 60);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+      return `${displayHours}${period}`;
+    },
+    generateTimeMarkers() {
+      const markers = [];
+      // Generate markers for every 3 hours (180 minutes)
+      for (let i = 0; i <= 1440; i += 180) {
+        markers.push({
+          position: (i / 1440) * 100,
+          label: this.formatTimeMarker(i)
+        });
+      }
+      return markers;
     }
   }
 }
 </script>
 
 <template>
-  <div class="weekly-schedule-container">
-    <div class="schedule-layout">
-      <!-- Days Column -->
-      <div class="days-selection">
-        <button v-for="option in weeklyOptions" 
-             :key="option.value"
-             class="btn btn-outline-primary"
-             :class="{ 
-                 'active': selectedDays.includes(option.value)
-             }"
-             :disabled="!edit"
-             @click="toggleDay(option.value)">
-          {{ option.label }}
-        </button>
-      </div>
+  <div class="d-flex flex-column flex-md-row mb-3 gap-2">
+    <!-- Days Column -->
+    <div class="days-selection">
+      <button v-for="option in weeklyOptions" 
+           :key="option.value"
+           class="btn btn-outline-primary"
+           :class="{ 
+               'active': selectedDays.includes(option.value)
+           }"
+           :disabled="!edit"
+           @click="toggleDay(option.value)">
+        {{ option.label }}
+      </button>
+    </div>
 
-      <!-- Time Settings Column -->
-      <div class="time-settings">
-        <div v-for="day in selectedDays" 
-             :key="day" 
-             class="time-interval-row">
-          <div class="day-label">{{ weeklyOptions.find(opt => opt.value === day).label }}</div>
-          <div class="time-controls">
-            <div class="time-inputs">
-              <div class="time-input-group">
-                <span>Start:</span>
-                <input 
-                  type="time" 
-                  :value="getTimeValue(day, 'start')"
-                  @input="e => updateTimeInterval(day, 'start', e.target.value)"
-                  :disabled="!edit"
-                  max="23:59"
-                  class="time-input">
-              </div>
-              <div class="time-input-group">
-                <span>End:</span>
-                <input 
-                  type="time" 
-                  :value="getTimeValue(day, 'end')"
-                  @input="e => updateTimeInterval(day, 'end', e.target.value)"
-                  :disabled="!edit"
-                  max="23:59"
-                  class="time-input">
+    <!-- Time Settings Column -->
+    <div class="time-settings">
+      <div v-for="day in selectedDays" 
+           :key="day" 
+           class="d-flex flex-column mb-3 card conf_card card-body bg-dark">
+        <div class="day-label mb-2">{{ weeklyOptions.find(opt => opt.value === day).label }}</div>
+        <div class="time-controls">
+          <div class="d-flex flex-wrap gap-3">
+            <div class="d-flex align-items-center">
+              <span class="me-2">Start:</span>
+              <input 
+                type="time" 
+                :value="getTimeValue(day, 'start')"
+                @input="e => updateTimeInterval(day, 'start', e.target.value)"
+                :disabled="!edit"
+                max="23:59"
+                class="time-input">
+            </div>
+            <div class="d-flex align-items-center">
+              <span class="me-2">End:</span>
+              <input 
+                type="time" 
+                :value="getTimeValue(day, 'end')"
+                @input="e => updateTimeInterval(day, 'end', e.target.value)"
+                :disabled="!edit"
+                max="23:59"
+                class="time-input">
+            </div>
+          </div>
+          
+          <!-- Time Slider -->
+          <div class="slider-container mt-3">
+            <div class="time-markers">
+              <div v-for="marker in generateTimeMarkers()" 
+                   :key="marker.position"
+                   class="time-marker"
+                   :style="{ left: `${marker.position}%` }">
+                <span class="marker-label">{{ marker.label }}</span>
               </div>
             </div>
             <div class="slider-wrapper">
@@ -120,6 +147,7 @@ export default {
                 class="time-slider start-handle" 
                 :min="0" 
                 :max="1440" 
+                step="15"
                 :value="timeToMinutes(getTimeValue(day, 'start'))"
                 @input="e => updateTimeFromSlider(day, 'start', e.target.value)"
                 :disabled="!edit">
@@ -128,10 +156,10 @@ export default {
                 class="time-slider end-handle" 
                 :min="0" 
                 :max="1440" 
+                step="15"
                 :value="timeToMinutes(getTimeValue(day, 'end'))"
                 @input="e => updateTimeFromSlider(day, 'end', e.target.value)"
                 :disabled="!edit">
-              <div class="slider-track"></div>
             </div>
           </div>
         </div>
@@ -169,31 +197,12 @@ export default {
   width: 100%;
 }
 
-.day-option {
-  display: none;
-}
-
 .time-settings {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.time-interval-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.5rem;
-  background: #191c1f;
-  border-radius: 0.5rem;
-  width: 100%;
-}
-
-.day-label {
-  min-width: 100px;
-  font-weight: 500;
 }
 
 .time-controls {
@@ -204,81 +213,218 @@ export default {
   gap: 1rem;
 }
 
-.time-inputs {
+/* Add responsive styles */
+@media screen and (max-width: 768px) {
+  .d-flex {
+    flex-wrap: wrap;
+  }
+
+  .time-controls {
+    width: 100%;
+  }
+
+  .time-input {
+    width: 100%;
+    margin: 0.25rem 0;
+  }
+
+  .slider-wrapper {
+    margin-top: 1rem;
+  }
+
+  /* Stack time inputs vertically on mobile */
+  .time-controls .d-flex {
+    flex-direction: column;
+  }
+
+  .time-controls .d-flex .d-flex {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Adjust time markers for better mobile visibility */
+  .marker-label {
+    font-size: 0.6rem;
+  }
+
+  .time-marker {
+    display: none;
+  }
+
+  .time-marker:nth-child(4n+1) {
+    display: flex;
+  }
+}
+
+@media screen and (max-width: 576px) {
+  .weekly-schedule-container {
+    padding: 0.5rem;
+  }
+
+  .schedule-layout {
+    gap: 1rem;
+  }
+
+  .days-selection {
+    min-width: 100px;
+  }
+
+  /* Make time inputs more touch-friendly */
+  input[type="time"] {
+    min-height: 38px;
+  }
+
+  /* Improve slider touch targets */
+  .time-slider::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+.slider-container {
   position: relative;
-  display: flex;
-  justify-content: left;
-  gap: 1rem;
+  padding-top: 20px;
+  margin-top: 1rem;
 }
 
-.time-input-group {
+.time-markers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+}
+
+.time-marker {
+  position: absolute;
+  transform: translateX(-50%);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
 }
 
-.time-input {
-  display: flex;
-  width: 100%;
-  padding: 0.25rem;
-  border: 1px solid #373b3e;
-  border-radius: 0.25rem;
-  font-size: 0.8rem;
-  background: #212529;
-  color: #fff;
-}
-
-.time-input:disabled {
-  background-color: rgba(13, 110, 253, 0.09);
-  color: #0d6efd;
-  border-color: transparent;
+.marker-label {
+  font-size: 0.7rem;
+  color: var(--bs-secondary);
 }
 
 .slider-wrapper {
   position: relative;
   height: 40px;
-  padding: 10px 0;
+  margin-top: 10px;
 }
 
 .time-slider {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
   width: 100%;
+  height: 4px;
+  background: var(--bs-primary);
+  opacity: 0.5;
+  border-radius: 2px;
   -webkit-appearance: none;
+  appearance: none;
   pointer-events: none;
-  background: transparent;
-  z-index: 3;
 }
 
 .time-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
   pointer-events: auto;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #0d6efd;
-  cursor: pointer;
-  border: none;
 }
 
-.time-slider:disabled::-webkit-slider-thumb {
-  background: rgba(13, 110, 253, 0.5);
-  cursor: not-allowed;
+.time-slider::-moz-range-thumb {
+  pointer-events: auto;
+}
+
+.time-slider:disabled {
+  opacity: 0.5;
+}
+
+/* Mobile responsive additions for slider */
+@media screen and (max-width: 768px) {
+  .slider-container {
+    padding-top: 15px;
+  }
+
+  .time-slider::-webkit-slider-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  .time-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Show fewer time markers on mobile */
+  .time-marker {
+    display: none;
+  }
+
+  .time-marker:nth-child(4n+1) {
+    display: flex;
+  }
+
+  .marker-label {
+    font-size: 0.6rem;
+  }
+}
+
+@media screen and (max-width: 576px) {
+  .slider-wrapper {
+    height: 50px; /* Increase touch target area */
+  }
+
+  .time-slider {
+    height: 6px; /* Slightly thicker slider bar */
+  }
+
+  .time-slider::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  .time-slider::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
 }
 
 .time-slider::-webkit-slider-runnable-track {
   -webkit-appearance: none;
-  background: transparent;
+  background: repeating-linear-gradient(
+    to right,
+    #373b3e,
+    #373b3e 2px,
+    transparent 2px,
+    transparent calc((100% / 96))
+  );
+  height: 8px;
+  border-radius: 4px;
 }
 
-.slider-track {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 4px;
-  width: 100%;
-  background: #373b3e;
-  border-radius: 2px;
+.time-slider::-moz-range-track {
+  background: repeating-linear-gradient(
+    to right,
+    #373b3e,
+    #373b3e 2px,
+    transparent 2px,
+    transparent calc((100% / 96))
+  );
+  height: 8px;
+  border-radius: 4px;
 }
+
+.time-slider.start-handle {
+  z-index: 2;
+}
+
+.time-slider.end-handle {
+  z-index: 1;
+}
+
+.time-slider::-webkit-slider-thumb {
+  z-index: 3;
+  margin-top: -4px; /* Adjust thumb vertical position */
+}
+
+/* Add step attribute to inputs in template */
 </style>

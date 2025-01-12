@@ -260,7 +260,19 @@ export default {
 						
 					<samp>{{this.dropdowns.Field.find(x => x.value === this.job.Field)?.unit}} {</samp>
 				</div>
-				
+				<div class="card card-body shadow-sm rounded-3 mb-2">
+		<!-- Weekly Schedule Component (outside main card) -->
+		<WeeklySchedule
+			v-if="this.job.Field === 'weekly'"
+			:edit="edit"
+			:weekly-options="weeklyOptions"
+			:selected-days="selectedDays"
+			:time-intervals="timeIntervals"
+			@update:time-interval="updateTimeInterval"
+				@update:toggle-day="toggleDay"
+			/>
+		</div>
+	</div>
 				<!-- Action section -->
 				<div class="px-5 d-flex gap-2 align-items-center">
 					<samp><LocaleText t="then"></LocaleText></samp>
@@ -295,34 +307,25 @@ export default {
 			</div>
 		</div>
 
-		<!-- Weekly Schedule Component (outside main card) -->
-		<WeeklySchedule
-			v-if="this.job.Field === 'weekly'"
-			:edit="edit"
-			:weekly-options="weeklyOptions"
-			:selected-days="selectedDays"
-			:time-intervals="timeIntervals"
-			@update:time-interval="updateTimeInterval"
-			@update:toggle-day="toggleDay"
-		/>
-	</div>
+		
 </template>
 
 <style scoped>
-*{
+* {
 	font-size: 0.875rem;
 }
 
-input{
+input {
 	padding: 0.1rem 0.4rem;
 }
-input:disabled{
+
+input:disabled {
 	border-color: transparent;
 	background-color: rgba(13, 110, 253, 0.09);
 	color: #0d6efd;
 }
 
-.dp__main{
+.dp__main {
 	width: auto;
 	flex-grow: 1;
 	--dp-input-padding: 2.5px 30px 2.5px 12px;
@@ -339,145 +342,40 @@ select:disabled {
 	color: #0d6efd;
 }
 
-.weekly-schedule-container {
-	padding: 1rem;
-	background: var(--bs-dark);
-	border-radius: 0.5rem;
+/* Add responsive styles */
+@media screen and (max-width: 768px) {
+	.card-body {
+		padding: 0.75rem;
+	}
+
+	.d-flex {
+		flex-wrap: wrap;
+	}
+
+	.gap-2 {
+		gap: 0.5rem !important;
+	}
+
+	/* Make inputs and selects full width on mobile */
+	input, select, .dp__main {
+		width: 100% !important;
+		flex: 0 0 100%;
+	}
+
+	/* Adjust spacing for mobile */
+	.px-5 {
+		padding-left: 1rem !important;
+		padding-right: 1rem !important;
+	}
 }
 
-.schedule-layout {
-	display: flex;
-	gap: 2rem;
-}
+@media screen and (max-width: 576px) {
+	.card-header {
+		padding: 0.5rem;
+	}
 
-.days-selection {
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-	min-width: 120px;
+	.card-body {
+		padding: 0.5rem;
+	}
 }
-
-.day-option {
-	padding: 0.5rem 1rem;
-	border: 1px solid #2c3034;
-	border-radius: 0.25rem;
-	cursor: pointer;
-	text-align: center;
-	transition: all 0.2s ease;
-}
-
-.day-option.selected {
-	background-color: #0d6efd;
-	color: white;
-	border-color: #0d6efd;
-}
-
-.day-option.muted {
-	opacity: 0.5;
-}
-
-.time-settings {
-	flex-grow: 1;
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-}
-
-.time-interval-row {
-	display: flex;
-	align-items: center;
-	gap: 1rem;
-	padding: 0.5rem;
-	background: #2c3034;
-	border-radius: 0.5rem;
-}
-
-.day-label {
-	min-width: 100px;
-	font-weight: 500;
-}
-
-.time-controls {
-	flex-grow: 1;
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-}
-
-.time-inputs {
-	display: flex;
-	justify-content: space-between;
-	gap: 1rem;
-}
-
-.time-input-group {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.time-input {
-	width: 85px;
-	padding: 0.25rem;
-	border: 1px solid #373b3e;
-	border-radius: 0.25rem;
-	font-size: 0.8rem;
-	background: #212529;
-	color: #fff;
-}
-
-.time-input:disabled {
-	background-color: rgba(13, 110, 253, 0.09);
-	color: #0d6efd;
-	border-color: transparent;
-}
-
-.slider-wrapper {
-	position: relative;
-	height: 40px;
-	padding: 10px 0;
-}
-
-.time-slider {
-	position: absolute;
-	top: 50%;
-	transform: translateY(-50%);
-	width: 100%;
-	-webkit-appearance: none;
-	pointer-events: none;
-	background: transparent;
-	z-index: 3;
-}
-
-.time-slider::-webkit-slider-thumb {
-	-webkit-appearance: none;
-	pointer-events: auto;
-	width: 16px;
-	height: 16px;
-	border-radius: 50%;
-	background: #0d6efd;
-	cursor: pointer;
-	border: none;
-}
-
-.time-slider:disabled::-webkit-slider-thumb {
-	background: rgba(13, 110, 253, 0.5);
-	cursor: not-allowed;
-}
-
-.time-slider::-webkit-slider-runnable-track {
-	-webkit-appearance: none;
-	background: transparent;
-}
-
-.slider-track {
-	position: absolute;
-	top: 50%;
-	transform: translateY(-50%);
-	height: 4px;
-	width: 100%;
-	background: #373b3e;
-	border-radius: 2px;
-}
-
 </style>
