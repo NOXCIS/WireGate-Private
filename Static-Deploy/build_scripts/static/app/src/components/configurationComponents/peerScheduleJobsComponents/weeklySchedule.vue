@@ -19,6 +19,30 @@ export default {
       required: true
     }
   },
+  data() {
+    return {
+      collapsedStates: {}
+    }
+  },
+  created() {
+    // Initialize collapse states for all days
+    this.selectedDays.forEach(day => {
+      this.collapsedStates[day] = false;
+    });
+  },
+  watch: {
+    selectedDays: {
+      handler(newDays) {
+        // Initialize collapse state for new days
+        newDays.forEach(day => {
+          if (!(day in this.collapsedStates)) {
+            this.collapsedStates[day] = false;
+          }
+        });
+      },
+      immediate: true
+    }
+  },
   methods: {
     toggleDay(day) {
       if (!this.edit) return;
@@ -80,6 +104,9 @@ export default {
         });
       }
       return markers;
+    },
+    toggleCollapse(day) {
+      this.collapsedStates[day] = !this.collapsedStates[day];
     }
   }
 }
@@ -87,79 +114,94 @@ export default {
 
 <template>
   <div class="d-flex flex-column flex-md-row mb-3 gap-2">
-    <!-- Days Column -->
+    <!-- Days Column - Updated with radio checkboxes -->
     <div class="days-selection">
-      <button v-for="option in weeklyOptions" 
+      <div v-for="option in weeklyOptions" 
            :key="option.value"
-           class="btn btn-outline-primary"
-           :class="{ 
-               'active': selectedDays.includes(option.value)
-           }"
-           :disabled="!edit"
-           @click="toggleDay(option.value)">
-        {{ option.label }}
-      </button>
+           class="day-option">
+        <input type="checkbox"
+               :id="option.value"
+               :checked="selectedDays.includes(option.value)"
+               :disabled="!edit"
+               class="btn-check bi-circle"
+               @change="toggleDay(option.value)">
+        <label :for="option.value" 
+               class="btn btn-outline-primary w-100 d-flex align-items-center">
+          <i class="bi me-2"></i>
+          {{ option.label }}
+        </label>
+      </div>
     </div>
 
-    <!-- Time Settings Column -->
+    <!-- Time Settings Column - Made collapsible -->
     <div class="time-settings">
       <div v-for="day in selectedDays" 
            :key="day" 
-           class="d-flex flex-column mb-3 card conf_card card-body bg-dark">
-        <div class="day-label mb-2">{{ weeklyOptions.find(opt => opt.value === day).label }}</div>
-        <div class="time-controls">
-          <div class="d-flex flex-wrap gap-3">
-            <div class="d-flex align-items-center">
-              <span class="me-2">Start:</span>
-              <input 
-                type="time" 
-                :value="getTimeValue(day, 'start')"
-                @input="e => updateTimeInterval(day, 'start', e.target.value)"
-                :disabled="!edit"
-                max="23:59"
-                class="time-input">
-            </div>
-            <div class="d-flex align-items-center">
-              <span class="me-2">End:</span>
-              <input 
-                type="time" 
-                :value="getTimeValue(day, 'end')"
-                @input="e => updateTimeInterval(day, 'end', e.target.value)"
-                :disabled="!edit"
-                max="23:59"
-                class="time-input">
-            </div>
+           class="mb-3 card conf_card bg-dark">
+        <div class="card-header p-2 cursor-pointer"
+             @click="toggleCollapse(day)">
+          <div class="d-flex justify-content-between align-items-center">
+            <span>{{ weeklyOptions.find(opt => opt.value === day).label }}</span>
+            <i class="bi" 
+               :class="collapsedStates[day] ? 'bi-chevron-down' : 'bi-chevron-up'">
+            </i>
           </div>
-          
-          <!-- Time Slider -->
-          <div class="slider-container mt-3">
-            <div class="time-markers">
-              <div v-for="marker in generateTimeMarkers()" 
-                   :key="marker.position"
-                   class="time-marker"
-                   :style="{ left: `${marker.position}%` }">
-                <span class="marker-label">{{ marker.label }}</span>
+        </div>
+        <div class="card-body" v-show="!collapsedStates[day]">
+          <div class="time-controls">
+            <div class="d-flex flex-wrap gap-3">
+              <div class="d-flex align-items-center">
+                <span class="me-2">Start:</span>
+                <input 
+                  type="time" 
+                  :value="getTimeValue(day, 'start')"
+                  @input="e => updateTimeInterval(day, 'start', e.target.value)"
+                  :disabled="!edit"
+                  max="23:59"
+                  class="time-input">
+              </div>
+              <div class="d-flex align-items-center">
+                <span class="me-2">End:</span>
+                <input 
+                  type="time" 
+                  :value="getTimeValue(day, 'end')"
+                  @input="e => updateTimeInterval(day, 'end', e.target.value)"
+                  :disabled="!edit"
+                  max="23:59"
+                  class="time-input">
               </div>
             </div>
-            <div class="slider-wrapper">
-              <input 
-                type="range" 
-                class="time-slider start-handle" 
-                :min="0" 
-                :max="1440" 
-                step="15"
-                :value="timeToMinutes(getTimeValue(day, 'start'))"
-                @input="e => updateTimeFromSlider(day, 'start', e.target.value)"
-                :disabled="!edit">
-              <input 
-                type="range" 
-                class="time-slider end-handle" 
-                :min="0" 
-                :max="1440" 
-                step="15"
-                :value="timeToMinutes(getTimeValue(day, 'end'))"
-                @input="e => updateTimeFromSlider(day, 'end', e.target.value)"
-                :disabled="!edit">
+            
+            <!-- Time Slider -->
+            <div class="slider-container mt-3">
+              <div class="time-markers">
+                <div v-for="marker in generateTimeMarkers()" 
+                     :key="marker.position"
+                     class="time-marker"
+                     :style="{ left: `${marker.position}%` }">
+                  <span class="marker-label">{{ marker.label }}</span>
+                </div>
+              </div>
+              <div class="slider-wrapper">
+                <input 
+                  type="range" 
+                  class="time-slider start-handle" 
+                  :min="0" 
+                  :max="1440" 
+                  step="15"
+                  :value="timeToMinutes(getTimeValue(day, 'start'))"
+                  @input="e => updateTimeFromSlider(day, 'start', e.target.value)"
+                  :disabled="!edit">
+                <input 
+                  type="range" 
+                  class="time-slider end-handle" 
+                  :min="0" 
+                  :max="1440" 
+                  step="15"
+                  :value="timeToMinutes(getTimeValue(day, 'end'))"
+                  @input="e => updateTimeFromSlider(day, 'end', e.target.value)"
+                  :disabled="!edit">
+              </div>
             </div>
           </div>
         </div>
@@ -427,4 +469,34 @@ export default {
 }
 
 /* Add step attribute to inputs in template */
+
+/* New styles for radio checkboxes and collapsible sections */
+.day-option {
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.card-header:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.btn-check {
+  position: absolute;
+  clip: rect(0,0,0,0);
+  pointer-events: none;
+}
+
+.btn-check:checked + .btn {
+  background-color: var(--bs-primary);
+  color: white;
+}
+
+.btn-check:disabled + .btn {
+  opacity: 0.65;
+  pointer-events: none;
+}
 </style>
