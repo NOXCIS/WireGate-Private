@@ -403,7 +403,8 @@ class Configuration:
                     remote_endpoint VARCHAR NULL, 
                     preshared_key VARCHAR NULL,
                     address_v4 VARCHAR NULL,  
-                    address_v6 VARCHAR NULL,  
+                    address_v6 VARCHAR NULL,
+                    rate_limit INTEGER DEFAULT 0,
                     PRIMARY KEY (id)
                 )
                 """ % dbName
@@ -422,7 +423,8 @@ class Configuration:
                     cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
                     keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
                     address_v4 VARCHAR NULL,  
-                    address_v6 VARCHAR NULL, 
+                    address_v6 VARCHAR NULL,
+                    rate_limit INTEGER DEFAULT 0,
                     PRIMARY KEY (id)
                 )
                 """ % dbName
@@ -454,6 +456,16 @@ class Configuration:
                 """ % dbName
             )
 
+    def __add_rate_limit_column(self):
+        """Add rate_limit column to existing tables if it doesn't exist"""
+        tables = [self.Name, f"{self.Name}_restrict_access"]
+        for table in tables:
+            try:
+                sqlUpdate(f"ALTER TABLE '{table}' ADD COLUMN rate_limit INTEGER DEFAULT 0")
+            except sqlite3.OperationalError:
+                # Column might already exist
+                pass
+
     def __dumpDatabase(self):
         for line in sqldb.iterdump():
             if (line.startswith(f"INSERT INTO \"{self.Name}\"")
@@ -466,6 +478,7 @@ class Configuration:
     def __importDatabase(self, sqlFilePath) -> bool:
         self.__dropDatabase()
         self.__createDatabase()
+        self.__add_rate_limit_column()  # Add this line
         if not os.path.exists(sqlFilePath):
             return False
 
@@ -1450,6 +1463,9 @@ class Configuration:
                         if network.version == 6 and count > 255:
                             break
         return True, availableAddress
+    
+    
+
 
 class Peer:
     def __init__(self, tableData, configuration: Configuration):

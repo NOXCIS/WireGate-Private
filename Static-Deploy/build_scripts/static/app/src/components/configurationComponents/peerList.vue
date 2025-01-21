@@ -40,6 +40,7 @@ import PeerSearchBar from "@/components/configurationComponents/peerSearchBar.vu
 import ProtocolBadge from "@/components/protocolBadge.vue";
 import EditRawConfigurationFile
 	from "@/components/configurationComponents/editConfigurationComponents/editRawConfigurationFile.vue";
+import PeerRateLimitSettings from "@/components/configurationComponents/peerRateLimitSettings.vue";
 export default {
 	name: "peerList",
 	components: {
@@ -75,7 +76,8 @@ export default {
 		PeerSearch, 
 		Peer, 
 		Line, 
-		Bar
+		Bar,
+		PeerRateLimitSettings
 	},
 	setup(){
 		const dashboardConfigurationStore = DashboardConfigurationStore();
@@ -163,6 +165,10 @@ export default {
 			peerSearchBarShow: false,
 			searchStringTimeout: undefined,
 			searchString: "",
+			peerRateLimit: {
+				modalOpen: false,
+				selectedPeer: undefined
+			},
 		}
 	},
 	mounted() {
@@ -638,6 +644,7 @@ export default {
 					      @refresh="this.getPeers()"
 					      @jobs="peerScheduleJobs.modalOpen = true; peerScheduleJobs.selectedPeer = this.configurationPeers.find(x => x.id === peer.id)"
 					      @setting="peerSetting.modalOpen = true; peerSetting.selectedPeer = this.configurationPeers.find(x => x.id === peer.id)"
+					      @rateLimit="peerRateLimit.modalOpen = true; peerRateLimit.selectedPeer = this.configurationPeers.find(x => x.id === peer.id)"
 					      @qrcode="(file) => {this.peerQRCode.peerConfigData = file; this.peerQRCode.modalOpen = true;}"
 					      @configurationFile="(file) => {this.peerConfigurationFile.peerConfigData = file; this.peerConfigurationFile.modalOpen = true;}"
 					></Peer>
@@ -678,7 +685,7 @@ export default {
 				@refresh="this.getPeers()"
 				@allLogs="peerScheduleJobsLogs.modalOpen = true"
 				@close="this.peerScheduleJobsAll.modalOpen = false"
-			                   :configurationPeers="this.configurationPeers"
+				                   :configurationPeers="this.configurationPeers"
 			>
 			</PeerJobsAllModal>
 		</Transition>
@@ -739,6 +746,15 @@ export default {
 				v-if="peerConfigurationFile.modalOpen"
 				:configurationFile="peerConfigurationFile.peerConfigData"
 			></PeerConfigurationFile>
+		</Transition>
+		<Transition name="zoom">
+			<PeerRateLimitSettings
+				v-if="this.peerRateLimit.modalOpen"
+				:selectedPeer="this.peerRateLimit.selectedPeer"
+				:configurationInfo="this.configurationInfo"
+				@refresh="this.getPeers()"
+				@close="this.peerRateLimit.modalOpen = false">
+			</PeerRateLimitSettings>
 		</Transition>
 	</div>
 </template>

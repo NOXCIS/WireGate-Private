@@ -24,9 +24,14 @@ RUN apk add --no-cache \
 
 WORKDIR /build
 
-# Copy application code and dependencies
-COPY ./build_scripts/torflux.go .
-COPY ./build_scripts/go.mod .
+# Create directories for each Go program
+RUN mkdir -p /build/torflux /build/traffic_weir
+
+# Copy files into their respective directories
+COPY ./build_scripts/torflux/torflux.go /build/torflux/
+COPY ./build_scripts/torflux/go.mod /build/torflux/
+COPY ./build_scripts/traffic_weir/traffic-weir.go /build/traffic_weir/
+COPY ./build_scripts/traffic_weir/go.mod /build/traffic_weir/
 COPY ./build_scripts/wiregate /build/wiregate/
 COPY ./build_scripts/wiregate.py .
 COPY ./build_scripts/requirements.txt .
@@ -43,7 +48,13 @@ RUN     venv/bin/pip install pyinstaller && \
         venv/bin/pyinstaller --clean --onefile --upx-dir=/usr/bin --name wiregate wiregate.py && \
         venv/bin/pyinstaller --clean --onefile --strip --upx-dir=/usr/bin --name vanguards vanguards.py 
 
-RUN     go build -buildmode=pie -ldflags="-X main.version=v1.0.0 -s -w" -o torflux
+# Build each program from its directory
+RUN cd /build/torflux && \
+    go build -buildmode=pie -ldflags="-X main.version=v1.0.0 -s -w" -o /build/torflux
+
+RUN cd /build/traffic_weir && \
+    go build -buildmode=pie -ldflags="-X main.version=v1.0.0 -s -w" -o /build/traffic-weir
+
 
 # Stage 3: Final image
 FROM noxcis/hellpine:latest
@@ -94,7 +105,7 @@ COPY --from=noxcis/awg-bins:latest /awg-quick /usr/bin/awg-quick
 COPY --from=builder /build/dist/wiregate /WireGate/wiregate
 COPY --from=builder /build/dist/vanguards /WireGate/vanguards
 COPY --from=builder /build/torflux /WireGate/torflux
-
+COPY --from=builder /build/traffic-weir /WireGate/traffic-weir
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 CMD \
     sh -c 'pgrep dashboard > /dev/null && pgrep tail > /dev/null' || exit 1

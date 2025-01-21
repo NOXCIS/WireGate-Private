@@ -4,15 +4,18 @@ import { onClickOutside } from '@vueuse/core'
 import "animate.css"
 import PeerSettingsDropdown from "@/components/configurationComponents/peerSettingsDropdown.vue";
 import LocaleText from "@/components/text/localeText.vue";
+import PeerRateLimit from '@/components/configurationComponents/peerRateLimit.vue'
+
+
 export default {
 	name: "peer",
-	components: {LocaleText, PeerSettingsDropdown},
+	components: {LocaleText, PeerSettingsDropdown, PeerRateLimit},
 	props: {
 		Peer: Object
 	},
 	data(){
 		return {
-		
+			showRateLimitSettings: false
 		}
 	},
 	setup(){
@@ -29,6 +32,21 @@ export default {
 				return this.Peer.latest_handshake.split(",")[0]
 			}
 			return this.Peer.latest_handshake;
+		}
+	},
+	methods: {
+		handleRateLimitSuccess(message) {
+			this.showRateLimitSettings = false
+			this.$emit('showToast', {
+				type: 'success',
+				message
+			})
+		},
+		handleRateLimitError(message) {
+			this.$emit('showToast', {
+				type: 'error',
+				message
+			})
 		}
 	}
 }
@@ -106,6 +124,7 @@ export default {
 							@jobs="this.$emit('jobs')"
 							@refresh="this.$emit('refresh')"
 							@share="this.$emit('share')"
+							@rateLimit="this.$emit('rateLimit')"
 							:Peer="Peer"
 							v-if="this.subMenuOpened"
 							ref="target"
@@ -115,6 +134,21 @@ export default {
 			</div>
 		</div>
 	</div>
+	<Modal v-if="showRateLimitSettings" @close="showRateLimitSettings = false">
+		<template #header>
+			<h5 class="modal-title">
+				<LocaleText t="Set Rate Limit"></LocaleText>
+			</h5>
+		</template>
+		<template #body>
+			<PeerRateLimitSettings 
+				:peer="Peer"
+				:interface="configurationName"
+				@success="handleRateLimitSuccess"
+				@error="handleRateLimitError"
+			></PeerRateLimitSettings>
+		</template>
+	</Modal>
 </template>
 
 <style scoped>

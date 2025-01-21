@@ -92,10 +92,38 @@ def auth_req():
     if authenticationRequired:
         apiKey = d.get('wg-dashboard-apikey')
         apiKeyEnabled = DashboardConfig.GetConfig("Server", "dashboard_api_key")[1]
+
+        def constant_time_compare(val1: str, val2: str) -> bool:
+            """
+            Compare two strings in constant time to prevent timing attacks.
+            """
+            if len(val1) != len(val2):
+                return False
+            result = 0
+            for x, y in zip(val1.encode(), val2.encode()):
+                result |= x ^ y
+            return result == 0
+        
+        def verify_api_key(provided_key: str, valid_keys: list) -> bool:
+            """
+            Verify API key in constant time to prevent timing attacks.
+            Returns True if the key is valid, False otherwise.
+            """
+            if not provided_key or not valid_keys:
+                return False
+                
+            # Use constant time comparison for each key
+            result = False
+            for valid_key in valid_keys:
+                # Using OR operation to maintain constant time
+                result |= constant_time_compare(provided_key, valid_key.Key)
+            return result
+
         if apiKey is not None and len(apiKey) > 0 and apiKeyEnabled:
-            apiKeyExist = len(list(filter(lambda x: x.Key == apiKey, DashboardConfig.DashboardAPIKeys))) == 1
+            apiKeyExist = verify_api_key(apiKey, DashboardConfig.DashboardAPIKeys)
+            
             AllDashboardLogger.log(str(request.url), str(request.remote_addr),
-                                   Message=f"API Key Access: {('true' if apiKeyExist else 'false')} - Key: {apiKey}")
+                               Message=f"API Key Access: {('true' if apiKeyExist else 'false')} - Key: {apiKey}")
             if not apiKeyExist:
                 DashboardConfig.APIAccessed = False
                 response = Flask.make_response(app, {
@@ -1394,7 +1422,6 @@ def API_downloadPeer(configName):
         return ResponseObject(False, "Peer does not exist")
     return ResponseObject(data=peer.downloadPeer())
 
-
 @api_blueprint.get("/downloadAllPeers/<configName>")
 def API_downloadAllPeers(configName):
     if configName not in WireguardConfigurations.keys():
@@ -1410,14 +1437,12 @@ def API_downloadAllPeers(configName):
         peerData.append(file)
     return ResponseObject(data=peerData)
 
-
 @api_blueprint.get("/getAvailableIPs/<configName>")
 def API_getAvailableIPs(configName):
     if configName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
     status, ips = WireguardConfigurations.get(configName).getAvailableIP()
     return ResponseObject(status=status, data=ips)
-
 
 @api_blueprint.get('/getWireguardConfigurationInfo')
 def API_getConfigurationInfo():
@@ -1430,21 +1455,17 @@ def API_getConfigurationInfo():
         "configurationRestrictedPeers": WireguardConfigurations[configurationName].getRestrictedPeersList()
     })
 
-
 @api_blueprint.get('/getDashboardTheme')
 def API_getDashboardTheme():
     return ResponseObject(data=DashboardConfig.GetConfig("Server", "dashboard_theme")[1])
-
 
 @api_blueprint.get('/getDashboardVersion')
 def API_getDashboardVersion():
     return ResponseObject(data=DashboardConfig.GetConfig("Server", "version")[1])
 
-
 @api_blueprint.get('/getDashboardProto')
 def API_getDashboardProto():
     return ResponseObject(data=DashboardConfig.GetConfig("Server", "protocol")[1])
-
 
 @api_blueprint.post('/savePeerScheduleJob/')
 def API_savePeerScheduleJob():
@@ -1549,7 +1570,6 @@ def API_savePeerScheduleJob():
         return ResponseObject(s, data=p)
     return ResponseObject(s, message=p)
 
-
 @api_blueprint.post('/deletePeerScheduleJob/')
 def API_deletePeerScheduleJob():
     data = request.json
@@ -1569,7 +1589,6 @@ def API_deletePeerScheduleJob():
     if s:
         return ResponseObject(s, data=p)
     return ResponseObject(s, message=p)
-
 
 @api_blueprint.get('/getPeerScheduleJobLogs/<configName>')
 def API_getPeerScheduleJobLogs(configName):

@@ -48,23 +48,33 @@ export default {
 	},
 	methods: {
 		save(){
-			if (this.job.Field && this.job.Operator && this.job.Action && this.job.Value){
-				fetchPost(`/api/savePeerScheduleJob/`, {
-					Job: this.job
-				}, (res) => {
-					if (res.status){
-						this.edit = false;
-						this.store.newMessage("Server", "Peer job saved", "success")
-						console.log(res.data)
-						this.$emit("refresh", res.data[0])
-						this.newJob = false;
-					}else{
-						this.store.newMessage("Server", res.message, "danger")
-					}
-				})
-			}else{
+			if (!this.job.Field || !this.job.Action || !this.job.Value || 
+				(this.job.Field !== 'weekly' && !this.job.Operator)) {
 				this.alert();
+				return;
 			}
+
+			if (!this.job.Peer && this.pjob?.Peer) {
+				this.job.Peer = this.pjob.Peer;
+			}
+
+			if (this.job.Field === 'weekly' && !this.job.Value) {
+				this.alert();
+				return;
+			}
+
+			fetchPost(`/api/savePeerScheduleJob/`, {
+				Job: this.job
+			}, (res) => {
+				if (res.status){
+					this.edit = false;
+					this.store.newMessage("Server", "Peer job saved", "success")
+					this.$emit("refresh", res.data[0])
+					this.newJob = false;
+				} else {
+					this.store.newMessage("Server", res.message, "danger")
+				}
+			})
 		},
 		alert(){
 			let animation = "animate__flash";

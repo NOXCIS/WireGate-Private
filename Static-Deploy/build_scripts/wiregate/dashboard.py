@@ -54,6 +54,7 @@ CORS(app, resources={rf"{APP_PREFIX}/api/*": {
 from .routes.api import api_blueprint  
 from .routes.tor_api import tor_blueprint
 from .routes.api import backGroundThread, peerJobScheduleBackgroundThread
+from .routes.traffic_weir_api import traffic_weir_blueprint
 
 # Initialize logger
 # Set up the rotating file handler with dynamic filename
@@ -77,6 +78,8 @@ from .routes.api import backGroundThread, peerJobScheduleBackgroundThread
 
 app.register_blueprint(api_blueprint, url_prefix=f'{APP_PREFIX}/api')
 app.register_blueprint(tor_blueprint, url_prefix=f'{APP_PREFIX}/api')
+app.register_blueprint(traffic_weir_blueprint, url_prefix=f'{APP_PREFIX}/api')
+
 
 '''
 API Routes
