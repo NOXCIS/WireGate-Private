@@ -404,7 +404,8 @@ class Configuration:
                     preshared_key VARCHAR NULL,
                     address_v4 VARCHAR NULL,  
                     address_v6 VARCHAR NULL,
-                    rate_limit INTEGER DEFAULT 0,
+                    upload_rate_limit INTEGER DEFAULT 0,
+                    download_rate_limit INTEGER DEFAULT 0,
                     PRIMARY KEY (id)
                 )
                 """ % dbName
@@ -424,7 +425,8 @@ class Configuration:
                     keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
                     address_v4 VARCHAR NULL,  
                     address_v6 VARCHAR NULL,
-                    rate_limit INTEGER DEFAULT 0,
+                    upload_rate_limit INTEGER DEFAULT 0,
+                    download_rate_limit INTEGER DEFAULT 0,
                     PRIMARY KEY (id)
                 )
                 """ % dbName
@@ -450,21 +452,36 @@ class Configuration:
                     cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
                     keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
                     address_v4 VARCHAR NULL,  
-                    address_v6 VARCHAR NULL, 
+                    address_v6 VARCHAR NULL,
+                    upload_rate_limit INTEGER DEFAULT 0,
+                    download_rate_limit INTEGER DEFAULT 0,
                     PRIMARY KEY (id)
                 )
                 """ % dbName
             )
 
-    def __add_rate_limit_column(self):
-        """Add rate_limit column to existing tables if it doesn't exist"""
-        tables = [self.Name, f"{self.Name}_restrict_access"]
+    def __migrateDatabase(self):
+        """Add missing columns to existing tables if they don't exist"""
+        tables = [self.Name, f"{self.Name}_restrict_access", f"{self.Name}_deleted"]
+        columns = {
+            'address_v4': 'VARCHAR NULL',
+            'address_v6': 'VARCHAR NULL', 
+            'upload_rate_limit': 'INTEGER DEFAULT 0',
+            'download_rate_limit': 'INTEGER DEFAULT 0'
+        }
+
         for table in tables:
-            try:
-                sqlUpdate(f"ALTER TABLE '{table}' ADD COLUMN rate_limit INTEGER DEFAULT 0")
-            except sqlite3.OperationalError:
-                # Column might already exist
-                pass
+            for column, type_def in columns.items():
+                try:
+                    # Check if column exists by attempting to select it
+                    sqlSelect(f"SELECT {column} FROM '{table}' LIMIT 1")
+                except sqlite3.OperationalError:
+                    # Column doesn't exist, add it
+                    try:
+                        sqlUpdate(f"ALTER TABLE '{table}' ADD COLUMN {column} {type_def}")
+                        print(f"Added {column} to {table}")
+                    except sqlite3.OperationalError as e:
+                        print(f"Error adding {column} to {table}: {e}")
 
     def __dumpDatabase(self):
         for line in sqldb.iterdump():
@@ -478,7 +495,7 @@ class Configuration:
     def __importDatabase(self, sqlFilePath) -> bool:
         self.__dropDatabase()
         self.__createDatabase()
-        self.__add_rate_limit_column()  # Add this line
+        self.__migrateDatabase()  # Add this line to ensure columns exist
         if not os.path.exists(sqlFilePath):
             return False
 
@@ -601,14 +618,16 @@ class Configuration:
                                     "remote_endpoint": DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
                                     "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else "",
                                     "address_v4": ','.join(addr_v4) if addr_v4 else None,
-                                    "address_v6": ','.join(addr_v6) if addr_v6 else None
+                                    "address_v6": ','.join(addr_v6) if addr_v6 else None,
+                                    "upload_rate_limit": 0,
+                                    "download_rate_limit": 0
                                 }
                                 sqlUpdate(
                                     """
                                     INSERT INTO '%s'
                                         VALUES (:id, :private_key, :DNS, :endpoint_allowed_ip, :name, :total_receive, :total_sent, 
                                         :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent, 
-                                        :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key, :address_v4, :address_v6);
+                                        :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key, :address_v4, :address_v6, :upload_rate_limit, :download_rate_limit);
                                     """ % self.Name, newPeer)
                                 self.Peers.append(Peer(newPeer, self))
                             else:
@@ -663,7 +682,9 @@ class Configuration:
                     "remote_endpoint": DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
                     "preshared_key": i["preshared_key"],
                     "address_v4": ','.join(addr_v4) if addr_v4 else None,
-                    "address_v6": ','.join(addr_v6) if addr_v6 else None
+                    "address_v6": ','.join(addr_v6) if addr_v6 else None,
+                    "upload_rate_limit": 0,
+                    "download_rate_limit": 0
                 }
 
                 sqlUpdate(
@@ -671,7 +692,7 @@ class Configuration:
                     INSERT INTO '%s'
                     VALUES (:id, :private_key, :DNS, :endpoint_allowed_ip, :name, :total_receive, :total_sent,
                     :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent,
-                    :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key, :address_v4, :address_v6);
+                    :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key, :address_v4, :address_v6, :upload_rate_limit, :download_rate_limit);
                     """ % self.Name, newPeer)
 
             # Handle wg commands and config file updates
@@ -1493,6 +1514,7 @@ class Peer:
         self.ShareLink: list[PeerShareLink] = []
         self.getJobs()
         self.getShareLink()
+        
 
     def toJson(self):
         self.getJobs()

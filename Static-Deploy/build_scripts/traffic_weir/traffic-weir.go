@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -13,10 +12,9 @@ import (
 )
 
 const (
-	tcPath       = "/sbin/tc"
-	wgPath       = "/usr/bin/wg"
-	awgPath      = "/usr/bin/awg"                // AmneziaWG path
-	protocolPath = "/tmp/wiregate_protocol.json" // Temporary file for protocol info
+	tcPath  = "/sbin/tc"
+	wgPath  = "/usr/bin/wg"
+	awgPath = "/usr/bin/awg" // AmneziaWG path
 )
 
 type PeerInfo struct {
@@ -24,38 +22,41 @@ type PeerInfo struct {
 	AllowedIPs []string
 }
 
-type ProtocolInfo struct {
-	Protocol string `json:"protocol"`
-}
-
-// getProtocolFromConfig reads the protocol from the temporary file written by Python
-func getProtocolFromConfig() (string, error) {
-	data, err := os.ReadFile(protocolPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read protocol info: %v", err)
-	}
-
-	var info ProtocolInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		return "", fmt.Errorf("failed to parse protocol info: %v", err)
-	}
-
-	return info.Protocol, nil
-}
-
 func main() {
-	// Define command line flags
-	interfaceName := flag.String("interface", "", "WireGuard interface name (required)")
-	peerKey := flag.String("peer", "", "WireGuard peer public key (required)")
-	rateLimit := flag.Int("rate", 0, "Rate limit in Kb/s (required)")
+	var (
+		iface        string
+		peer         string
+		uploadRate   int
+		downloadRate int
+		protocol     string
+		remove       bool
+	)
+
+	flag.StringVar(&iface, "interface", "", "Interface name")
+	flag.StringVar(&peer, "peer", "", "Peer ID")
+	flag.IntVar(&uploadRate, "upload-rate", 0, "Upload rate limit in KB/s")
+	flag.IntVar(&downloadRate, "download-rate", 0, "Download rate limit in KB/s")
+	flag.StringVar(&protocol, "protocol", "wg", "Protocol (wg or awg)")
+	flag.BoolVar(&remove, "remove", false, "Remove rate limits")
 	flag.Parse()
 
-	fmt.Printf("Starting traffic-weir with interface=%s, peer=%s, rate=%d\n",
-		*interfaceName, *peerKey, *rateLimit)
+	fmt.Printf("Starting traffic-weir with interface=%s, peer=%s, upload-rate=%d, download-rate=%d, protocol=%s, remove=%v\n",
+		iface, peer, uploadRate, downloadRate, protocol, remove)
 
-	if *interfaceName == "" || *peerKey == "" || *rateLimit == 0 {
-		fmt.Println("Error: All flags are required")
+	if iface == "" || peer == "" || protocol == "" {
+		fmt.Println("Error: interface, peer, and protocol flags are required")
 		flag.Usage()
+		os.Exit(1)
+	}
+
+	if !remove && uploadRate == 0 && downloadRate == 0 {
+		fmt.Println("Error: at least one of upload-rate or download-rate must be specified unless -remove is used")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	if protocol != "wg" && protocol != "awg" {
+		fmt.Printf("Error: Invalid protocol %s. Must be either 'wg' or 'awg'\n", protocol)
 		os.Exit(1)
 	}
 
@@ -65,25 +66,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Reading protocol configuration...")
-	protocol, err := getProtocolFromConfig()
-	if err != nil {
-		fmt.Printf("Error getting protocol: %v\n", err)
-		os.Exit(1)
+	if remove {
+		fmt.Printf("Removing rate limits for peer %s on interface %s...\n", peer, iface)
+		if err := removeRateLimits(iface); err != nil {
+			fmt.Printf("Error removing rate limits: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Successfully removed rate limits")
+		os.Exit(0)
 	}
-	fmt.Printf("Using protocol: %s\n", protocol)
 
-	// Get peer information using the appropriate protocol command
-	fmt.Printf("Fetching peer information for %s...\n", *peerKey)
+	// Get peer information using the specified protocol
+	fmt.Printf("Fetching peer information for %s...\n", peer)
 	var peerInfo *PeerInfo
+	var err error
 	switch protocol {
 	case "wg":
-		peerInfo, err = getWgPeerInfo(*interfaceName, *peerKey)
+		peerInfo, err = getWgPeerInfo(iface, peer)
 	case "awg":
-		peerInfo, err = getAwgPeerInfo(*interfaceName, *peerKey)
-	default:
-		fmt.Printf("Error: Unsupported protocol %s\n", protocol)
-		os.Exit(1)
+		peerInfo, err = getAwgPeerInfo(iface, peer)
 	}
 
 	if err != nil {
@@ -94,46 +95,56 @@ func main() {
 	fmt.Printf("Found peer with %d allowed IPs\n", len(peerInfo.AllowedIPs))
 
 	if len(peerInfo.AllowedIPs) == 0 {
-		fmt.Printf("Error: No allowed IPs found for peer %s\n", *peerKey)
+		fmt.Printf("Error: No allowed IPs found for peer %s\n", peer)
 		os.Exit(1)
 	}
 
 	// Clean up existing qdisc
 	fmt.Println("Cleaning up existing traffic control rules...")
-	cleanupCmd := exec.Command(tcPath, "qdisc", "del", "dev", *interfaceName, "root")
+	cleanupCmd := exec.Command(tcPath, "qdisc", "del", "dev", iface, "root")
 	if err := cleanupCmd.Run(); err != nil {
 		fmt.Printf("Note: Cleanup returned: %v (this is usually safe to ignore)\n", err)
 	}
 
 	// Create root qdisc
 	fmt.Println("Setting up root qdisc...")
-	if err := setupRootQdisc(*interfaceName); err != nil {
+	if err := setupRootQdisc(iface); err != nil {
 		fmt.Printf("Error setting up root qdisc: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Create class for peer
-	fmt.Printf("Creating rate limit class (%d Kb/s)...\n", *rateLimit)
-	classID := "1:10"
-	err = createOrUpdateRateLimitClass(*interfaceName, classID, *rateLimit)
-	if err != nil {
-		fmt.Printf("Error creating rate limit class: %v\n", err)
+	// Create separate classes for upload and download
+	classBase := peerToClassID(peer)
+	uploadClassID := fmt.Sprintf("1:%d1", classBase)   // Add '1' suffix for upload
+	downloadClassID := fmt.Sprintf("1:%d2", classBase) // Add '2' suffix for download
+
+	if uploadRate > 0 {
+		if err := createClass(iface, uploadClassID, uploadRate); err != nil {
+			fmt.Printf("Error creating upload rate limit class: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if downloadRate > 0 {
+		if err := createClass(iface, downloadClassID, downloadRate); err != nil {
+			fmt.Printf("Error creating download rate limit class: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Now use the defined class IDs
+	if err := tryAddFiltersForIP(iface, uploadClassID, peerInfo.AllowedIPs[0], uploadRate, 0); err != nil {
+		fmt.Printf("Error setting up upload rate limits for peer %s: %v\n", peer, err)
 		os.Exit(1)
 	}
 
-	// Add filters for each IP
-	fmt.Println("Setting up filters for allowed IPs...")
-	for _, ip := range peerInfo.AllowedIPs {
-		fmt.Printf("Adding filters for IP %s...\n", ip)
-		if err := addFiltersForIP(*interfaceName, classID, ip); err != nil {
-			fmt.Printf("Error setting up rate limit for IP %s: %v\n", ip, err)
-			continue
-		}
-		fmt.Printf("Successfully set rate limit of %d Kb/s for IP %s\n", *rateLimit, ip)
+	if err := tryAddFiltersForIP(iface, downloadClassID, peerInfo.AllowedIPs[0], 0, downloadRate); err != nil {
+		fmt.Printf("Error setting up download rate limits for peer %s: %v\n", peer, err)
+		os.Exit(1)
 	}
 
 	fmt.Printf("Successfully configured rate limiting for peer %s on interface %s\n",
-		*peerKey, *interfaceName)
+		peer, iface)
 }
 
 func setupRootQdisc(iface string) error {
@@ -146,7 +157,7 @@ func setupRootQdisc(iface string) error {
 	return nil
 }
 
-func createOrUpdateRateLimitClass(iface, classID string, rateKbps int) error {
+func createClass(iface, classID string, rateKbps int) error {
 	// Try to modify existing class first
 	modifyCmd := exec.Command(tcPath, "class", "change", "dev", iface,
 		"parent", "1:", "classid", classID,
@@ -168,112 +179,40 @@ func createOrUpdateRateLimitClass(iface, classID string, rateKbps int) error {
 	return nil
 }
 
-func applyRateLimitForPeer(iface string, peer *PeerInfo, rateLimit int) error {
-	// Check if root qdisc exists
-	checkCmd := exec.Command(tcPath, "qdisc", "show", "dev", iface)
-	output, _ := checkCmd.CombinedOutput()
+func tryAddFiltersForIP(iface, classID, peer string, uploadRate, downloadRate int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	if !strings.Contains(string(output), "htb 1:") {
-		// Create root qdisc only if it doesn't exist
-		if err := setupRootQdisc(iface); err != nil {
-			return fmt.Errorf("failed to setup root qdisc: %v", err)
-		}
-	}
-
-	// Create or update rate limit class
-	classID := "1:10"
-	if err := createOrUpdateRateLimitClass(iface, classID, rateLimit); err != nil {
-		return fmt.Errorf("failed to create/update rate limit class: %v", err)
-	}
-
-	// Check existing filters
-	checkFiltersCmd := exec.Command(tcPath, "filter", "show", "dev", iface)
-	filterOutput, _ := checkFiltersCmd.CombinedOutput()
-
-	// Add filters only if they don't exist
-	for _, ip := range peer.AllowedIPs {
-		if !strings.Contains(string(filterOutput), ip) {
-			if err := addFiltersForIP(iface, classID, ip); err != nil {
-				return fmt.Errorf("failed to add filters for IP %s: %v", ip, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func addFiltersForIP(iface, classID, ipCIDR string) error {
-	maxRetries := 3
-	retryDelay := time.Second * 2
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if attempt > 1 {
-			fmt.Printf("Retry attempt %d/%d for IP %s...\n", attempt, maxRetries, ipCIDR)
-		}
-
-		err := tryAddFiltersForIP(iface, classID, ipCIDR)
-		if err == nil {
-			return nil
-		}
-
-		fmt.Printf("Attempt %d failed: %v\n", attempt, err)
-		if attempt < maxRetries {
-			fmt.Printf("Waiting %v before retry...\n", retryDelay)
-			time.Sleep(retryDelay)
-			continue
-		}
-		return fmt.Errorf("failed to add filters after %d attempts: %v", maxRetries, err)
-	}
-	return nil
-}
-
-func tryAddFiltersForIP(iface, classID, ipCIDR string) error {
-	ipOnly := strings.Split(ipCIDR, "/")[0]
+	// Extract IP from CIDR notation
+	ipOnly := strings.Split(peer, "/")[0]
 	protocol := "ip"
 	if strings.Contains(ipOnly, ":") {
 		protocol = "ipv6"
 	}
 
-	fmt.Printf("Setting up %s filters for %s...\n", protocol, ipOnly)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Outgoing traffic filter
-	fmt.Println("Adding outgoing traffic filter...")
-	filterCmd := exec.CommandContext(ctx, tcPath, "filter", "add", "dev", iface,
-		"protocol", protocol, "parent", "1:", "prio", "1",
-		"u32", "match", "ip", "src", ipOnly,
-		"flowid", classID)
-	if output, err := filterCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to add outgoing filter: %v\nOutput: %s", err, output)
+	if uploadRate > 0 {
+		// Outgoing traffic filter (upload)
+		filterCmd := exec.CommandContext(ctx, tcPath, "filter", "add", "dev", iface,
+			"protocol", protocol, "parent", "1:", "prio", "1",
+			"u32", "match", "ip", "src", ipOnly,
+			"flowid", classID)
+		if err := filterCmd.Run(); err != nil {
+			return fmt.Errorf("failed to add upload filter: %v", err)
+		}
 	}
 
-	// Incoming traffic filter
-	fmt.Println("Adding incoming traffic filter...")
-	filterCmd = exec.CommandContext(ctx, tcPath, "filter", "add", "dev", iface,
-		"protocol", protocol, "parent", "1:", "prio", "1",
-		"u32", "match", "ip", "dst", ipOnly,
-		"flowid", classID)
-	if output, err := filterCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to add incoming filter: %v\nOutput: %s", err, output)
+	if downloadRate > 0 {
+		// Incoming traffic filter (download)
+		filterCmd := exec.CommandContext(ctx, tcPath, "filter", "add", "dev", iface,
+			"protocol", protocol, "parent", "1:", "prio", "1",
+			"u32", "match", "ip", "dst", ipOnly,
+			"flowid", classID)
+		if err := filterCmd.Run(); err != nil {
+			return fmt.Errorf("failed to add download filter: %v", err)
+		}
 	}
 
-	fmt.Printf("Successfully added both filters for %s\n", ipOnly)
 	return nil
-}
-
-// getPeerInfo tries 'wg show' first, then 'awg show'
-func getPeerInfo(interfaceName, peerKey string) (*PeerInfo, error) {
-	info, err := getWgPeerInfo(interfaceName, peerKey)
-	if err == nil {
-		return info, nil
-	}
-	info, err = getAwgPeerInfo(interfaceName, peerKey)
-	if err == nil {
-		return info, nil
-	}
-	return nil, fmt.Errorf("peer not found in either wg or awg")
 }
 
 func getWgPeerInfo(interfaceName, peerKey string) (*PeerInfo, error) {
@@ -325,4 +264,29 @@ func parsePeerInfo(output, targetPeerKey string) (*PeerInfo, error) {
 		return nil, fmt.Errorf("peer not found")
 	}
 	return peer, nil
+}
+
+func removeRateLimits(iface string) error {
+	// Clean up existing qdisc which removes all rate limits
+	fmt.Println("Removing traffic control rules...")
+	cleanupCmd := exec.Command(tcPath, "qdisc", "del", "dev", iface, "root")
+	output, err := cleanupCmd.CombinedOutput()
+	if err != nil {
+		// Check if the error is because there were no rules to remove
+		if strings.Contains(string(output), "RTNETLINK answers: No such file or directory") {
+			fmt.Println("No existing traffic control rules found")
+			return nil
+		}
+		return fmt.Errorf("failed to remove traffic control rules: %v\nOutput: %s", err, output)
+	}
+	return nil
+}
+
+func peerToClassID(peer string) int {
+	// Simple hash function to generate a class ID from peer key
+	var hash uint32
+	for i := 0; i < len(peer); i++ {
+		hash = hash*31 + uint32(peer[i])
+	}
+	return int(hash%90) + 10 // Range 10-99 to ensure valid class IDs
 }

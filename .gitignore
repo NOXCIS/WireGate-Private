@@ -12,6 +12,8 @@ __pycache__/
 
 /UI_DEV_KIT/*
 /UI_DEV_KIT
+/UI_DEV_KIT copy/*
+/UI_DEV_KIT copy
 
 /configs/logs
 /configs/tor

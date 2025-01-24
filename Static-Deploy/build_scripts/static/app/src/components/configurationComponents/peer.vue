@@ -10,8 +10,19 @@ import PeerRateLimit from '@/components/configurationComponents/peerRateLimit.vu
 export default {
 	name: "peer",
 	components: {LocaleText, PeerSettingsDropdown, PeerRateLimit},
+	emits: [
+		'share',
+		'refresh',
+		'jobs',
+		'setting',
+		'rateLimit',
+		'qrcode',
+		'configurationFile',
+		'showToast'
+	],
 	props: {
-		Peer: Object
+		Peer: Object,
+		configurationName: String
 	},
 	data(){
 		return {
@@ -134,25 +145,36 @@ export default {
 			</div>
 		</div>
 	</div>
-	<Modal v-if="showRateLimitSettings" @close="showRateLimitSettings = false">
-		<template #header>
-			<h5 class="modal-title">
-				<LocaleText t="Set Rate Limit"></LocaleText>
-			</h5>
-		</template>
-		<template #body>
-			<PeerRateLimitSettings 
-				:peer="Peer"
-				:interface="configurationName"
-				@success="handleRateLimitSuccess"
-				@error="handleRateLimitError"
-			></PeerRateLimitSettings>
-		</template>
-	</Modal>
+	<div v-if="showRateLimitSettings" 
+		 class="modal fade show" 
+		 style="display: block"
+		 tabindex="-1">
+		<div class="modal-dialog">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title">
+						<LocaleText t="Set Rate Limit"></LocaleText>
+					</h5>
+					<button type="button" 
+							class="btn-close" 
+							@click="showRateLimitSettings = false">
+					</button>
+				</div>
+				<div class="modal-body">
+					<PeerRateLimit 
+						:peer="Peer"
+						:interface="configurationName"
+						@success="handleRateLimitSuccess"
+						@error="handleRateLimitError"
+					></PeerRateLimit>
+				</div>
+			</div>
+		</div>
+		<div class="modal-backdrop fade show"></div>
+	</div>
 </template>
 
 <style scoped>
-
 .slide-fade-leave-active, .slide-fade-enter-active{
 	transition: all 0.2s cubic-bezier(0.82, 0.58, 0.17, 1.3);
 }
@@ -174,5 +196,9 @@ export default {
 
 .peerCard:hover{
 	box-shadow: var(--bs-box-shadow) !important;
+}
+
+.modal {
+	background-color: rgba(0, 0, 0, 0.5);
 }
 </style>

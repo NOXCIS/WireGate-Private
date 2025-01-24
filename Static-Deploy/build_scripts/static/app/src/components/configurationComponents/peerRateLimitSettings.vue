@@ -9,43 +9,71 @@
           <button type="button" class="btn-close" @click="$emit('close')"></button>
         </div>
         <div class="modal-body">
-          <div v-if="error" class="alert alert-danger mb-3">
-            {{ error }}
+          <div v-if="error" class="alert alert-danger mb-3 error-message">
+            <span class="message-text">{{ error }}</span>
           </div>
+          
+          <!-- Upload Rate -->
           <div class="mb-3">
             <label class="form-label">
-              <LocaleText t="Rate Limit"></LocaleText>
+              <LocaleText t="Upload Rate Limit"></LocaleText>
             </label>
             <div v-if="fetchingRate" class="text-center py-3">
               <div class="spinner-border spinner-border-sm" role="status">
                 <span class="visually-hidden">Loading...</span>
               </div>
-              <span class="ms-2">Loading current rate limit...</span>
             </div>
             <div v-else class="input-group">
               <input 
                 type="number" 
                 class="form-control"
-                v-model="rateValue"
+                v-model="uploadRateValue"
                 min="0"
-                :placeholder="'Enter rate limit'"
+                :placeholder="'Enter upload rate limit'"
               />
               <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                {{ rateUnit }}/s
+                {{ uploadRateUnit }}/s
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" @click="rateUnit = 'KB'">KB/s</a></li>
-                <li><a class="dropdown-item" @click="rateUnit = 'MB'">MB/s</a></li>
-                <li><a class="dropdown-item" @click="rateUnit = 'GB'">GB/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('upload', 'KB')">KB/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('upload', 'MB')">MB/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('upload', 'GB')">GB/s</a></li>
               </ul>
             </div>
-            <small class="text-muted d-block mt-1">
-              <LocaleText t="Enter 0 to remove rate limit"></LocaleText>
-            </small>
-            <small class="text-muted d-block mt-1" v-if="rateValue > 0">
-              ≈ {{ formatToKb(rateValue, rateUnit) }} KB/s
-            </small>
           </div>
+
+          <!-- Download Rate -->
+          <div class="mb-3">
+            <label class="form-label">
+              <LocaleText t="Download Rate Limit"></LocaleText>
+            </label>
+            <div v-if="fetchingRate" class="text-center py-3">
+              <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
+            <div v-else class="input-group">
+              <input 
+                type="number" 
+                class="form-control"
+                v-model="downloadRateValue"
+                min="0"
+                :placeholder="'Enter download rate limit'"
+              />
+              <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                {{ downloadRateUnit }}/s
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" @click="updateUnit('download', 'KB')">KB/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('download', 'MB')">MB/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('download', 'GB')">GB/s</a></li>
+              </ul>
+            </div>
+          </div>
+
+          <small class="text-muted d-block mt-1">
+            <LocaleText t="Enter 0 to remove rate limit"></LocaleText>
+          </small>
         </div>
         <div class="modal-footer">
           <button 
@@ -73,10 +101,13 @@
 <script>
 import LocaleText from "@/components/text/localeText.vue";
 import {fetchPost, fetchGet} from "@/utilities/fetch.js";
+import { DashboardConfigurationStore } from "@/stores/DashboardConfigurationStore.js"
 
 export default {
   name: "PeerRateLimitSettings",
-  components: {LocaleText},
+  components: {
+    LocaleText
+  },
   props: {
     selectedPeer: {
       type: Object,
@@ -87,14 +118,20 @@ export default {
       required: true
     }
   },
+  setup() {
+    const dashboardStore = DashboardConfigurationStore()
+    return { dashboardStore }
+  },
   data() {
     return {
-      rateValue: 0,
-      rateUnit: 'KB',
+      uploadRateValue: 0,
+      uploadRateUnit: 'KB',
+      downloadRateValue: 0,
+      downloadRateUnit: 'KB',
       loading: false,
       error: null,
       isRemoving: false,
-      fetchingRate: false
+      fetchingRate: false,
     }
   },
   async created() {
@@ -102,8 +139,9 @@ export default {
   },
   computed: {
     isValidRate() {
-      const rate = parseFloat(this.rateValue);
-      return !isNaN(rate) && rate >= 0;
+      const uploadRate = parseFloat(this.uploadRateValue);
+      const downloadRate = parseFloat(this.downloadRateValue);
+      return !isNaN(uploadRate) && !isNaN(downloadRate) && uploadRate >= 0 && downloadRate >= 0;
     }
   },
   methods: {
@@ -137,95 +175,66 @@ export default {
     
     async fetchExistingRateLimit() {
       this.fetchingRate = true;
-      console.log('Starting rate limit fetch for:', {
-        interface: this.configurationInfo.Name,
-        peer_key: this.selectedPeer.id
-      });
+      this.error = null;
       
       try {
-        const encodedPeerKey = encodeURIComponent(this.selectedPeer.id);
-        
-        const response = await fetchGet(`/api/get_peer_rate_limit`, {
+        await fetchGet("/api/get_peer_rate_limit", {
           interface: this.configurationInfo.Name,
-          peer_key: encodedPeerKey
-        });
-        
-        console.log('Rate limit API response:', response);
-
-        if (response && response.rate !== undefined) {
-          const rate = parseInt(response.rate);
-          console.log('Parsed rate value:', rate);
+          peer_key: this.selectedPeer.id
+        }, (response) => {
+          console.log('Raw API Response:', response);
           
-          if (rate >= 1024 * 1024) { // GB
-            this.rateValue = (rate / (1024 * 1024)).toFixed(2);
-            this.rateUnit = 'GB';
-            console.log('Converted to GB:', this.rateValue);
-          } else if (rate >= 1024) { // MB
-            this.rateValue = (rate / 1024).toFixed(2);
-            this.rateUnit = 'MB';
-            console.log('Converted to MB:', this.rateValue);
-          } else { // KB
-            this.rateValue = rate;
-            this.rateUnit = 'KB';
-            console.log('Kept as KB:', this.rateValue);
+          if (!response?.status) {
+            throw new Error(response?.message || 'Failed to fetch rate limits');
           }
+
+          const uploadRateKb = response.data?.upload_rate ?? 0;
+          const downloadRateKb = response.data?.download_rate ?? 0;
           
-          console.log('Final rate limit values:', {
-            value: this.rateValue,
-            unit: this.rateUnit
-          });
-        } else {
-          console.warn('Invalid or missing rate in response:', response);
-        }
-      } catch (error) {
-        console.error('Failed to fetch rate limit:', error);
-        console.error('Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
+          [this.uploadRateValue, this.uploadRateUnit] = this.convertFromKb(uploadRateKb);
+          [this.downloadRateValue, this.downloadRateUnit] = this.convertFromKb(downloadRateKb);
         });
-        this.error = 'Failed to fetch current rate limit';
+      } catch (error) {
+        console.error('Fetch error:', error);
+        this.error = error.message || 'Failed to fetch rate limits';
+        this.uploadRateValue = 0;
+        this.uploadRateUnit = 'KB';
+        this.downloadRateValue = 0;
+        this.downloadRateUnit = 'KB';
       } finally {
         this.fetchingRate = false;
-        console.log('Rate limit fetch completed');
       }
     },
     
     async applyRateLimit() {
       if (!this.isValidRate) return;
       
-      console.log('Starting rate limit application...');
       this.loading = true;
       this.error = null;
       this.isRemoving = false;
       
-      const rateInKb = this.convertToKb(this.rateValue, this.rateUnit);
-      console.log('Converted rate:', {
-        originalValue: this.rateValue,
-        originalUnit: this.rateUnit,
-        convertedRateKb: rateInKb
-      });
+      const uploadRateKb = this.convertToKb(this.uploadRateValue, this.uploadRateUnit);
+      const downloadRateKb = this.convertToKb(this.downloadRateValue, this.downloadRateUnit);
       
       try {
         await fetchPost("/api/set_peer_rate_limit", {
           interface: this.configurationInfo.Name,
           peer_key: this.selectedPeer.id,
-          rate: rateInKb
+          upload_rate: uploadRateKb,
+          download_rate: downloadRateKb
         }, (response) => {
-          console.log('API Response:', response);
-
           if (response && response.success) {
-            console.log('Rate limit set successfully');
+            this.dashboardStore.newMessage('Server', 'Rate limits set successfully', 'success');
             this.$emit('refresh');
             this.$emit('close');
           } else {
-            console.warn('API returned error:', response?.message);
-            this.error = response?.message || 'Failed to set rate limit';
+            this.dashboardStore.newMessage('Error', response?.message || 'Failed to set rate limits', 'danger');
           }
         });
       } catch (error) {
         console.error('Request error:', error);
-        this.error = 'Network error while setting rate limit';
+        this.dashboardStore.newMessage('Error', 'Network error while setting rate limits', 'danger');
+        this.error = 'Network error while setting rate limits';
       } finally {
         this.loading = false;
       }
@@ -237,22 +246,67 @@ export default {
       this.isRemoving = true;
       
       try {
-        const response = await fetchPost("/api/remove_peer_rate_limit", {
+        await fetchPost("/api/remove_peer_rate_limit", {
           interface: this.configurationInfo.Name,
           peer_key: this.selectedPeer.id
+        }, (response) => {
+          if (response && response.status) {
+            this.dashboardStore.newMessage('Server', 'Rate limit removed successfully', 'success');
+            this.$emit('refresh');
+            this.$emit('close');
+          } else {
+            this.dashboardStore.newMessage('Error', response?.message || 'Failed to remove rate limit', 'danger');
+          }
         });
-        
-        if (response.status) {
-          this.$emit('refresh');
-          this.$emit('close');
-        } else {
-          this.error = response.message || 'Failed to remove rate limit';
-        }
       } catch (error) {
-        this.error = 'Network error while removing rate limit';
         console.error("Failed to remove rate limit:", error);
+        this.dashboardStore.newMessage('Error', 'Network error while removing rate limit', 'danger');
+        this.error = 'Network error while removing rate limit';
       } finally {
         this.loading = false;
+        this.isRemoving = false;
+      }
+    },
+    
+    convertFromKb(rateInKb) {
+      if (rateInKb >= 1024 * 1024) {
+        return [(rateInKb / (1024 * 1024)).toFixed(2), 'GB'];
+      } else if (rateInKb >= 1024) {
+        return [(rateInKb / 1024).toFixed(2), 'MB'];
+      }
+      return [rateInKb, 'KB'];
+    },
+    
+    updateUnit(direction, newUnit) {
+      const value = direction === 'upload' ? this.uploadRateValue : this.downloadRateValue;
+      const currentUnit = direction === 'upload' ? this.uploadRateUnit : this.downloadRateUnit;
+      
+      if (value) {
+        // Convert current value to KB first
+        const valueInKb = this.convertToKb(value, currentUnit);
+        
+        // Convert KB to the new unit
+        let newValue;
+        switch (newUnit) {
+          case 'GB':
+            newValue = (valueInKb / (1024 * 1024)).toFixed(2);
+            break;
+          case 'MB':
+            newValue = (valueInKb / 1024).toFixed(2);
+            break;
+          case 'KB':
+            newValue = valueInKb;
+            break;
+        }
+        
+        // Update the appropriate direction
+        if (direction === 'upload') {
+          this.uploadRateValue = newValue;
+          this.uploadRateUnit = newUnit;
+        } else {
+          this.downloadRateValue = newValue;
+          this.downloadRateUnit = newUnit;
+        }
       }
     }
   }
@@ -265,5 +319,24 @@ export default {
 }
 .form-select {
   flex: 0 0 auto;
+}
+.error-message {
+  word-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  padding: 0.75rem 1.25rem;
+  margin: 1rem 0;
+  border-radius: 0.25rem;
+}
+.message-text {
+  display: inline-block;
+  word-break: break-all;
+  white-space: normal;
+  width: 100%;
 }
 </style> 
