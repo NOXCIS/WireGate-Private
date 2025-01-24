@@ -59,15 +59,19 @@ def set_peer_rate_limit():
             '-protocol', protocol
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
+        
+        success_msg = f"Successfully configured rate limiting for peer {peer.id} on interface {config.Name}"
+        if success_msg in result.stdout:
+            return ResponseObject(True, success_msg)
+        elif result.returncode != 0:
             error_msg = f"Failed to set rate limits. Exit code: {result.returncode}\n"
             error_msg += f"stdout: {result.stdout}\n"
             error_msg += f"stderr: {result.stderr}\n"
             error_msg += f"Command: {' '.join(cmd)}"
             return ResponseObject(False, error_msg)
+        else:
+            return ResponseObject(False, "Unexpected response from traffic-weir")
             
-        return ResponseObject(True, f"Rate limits set successfully for peer {peer.id}")
-        
     except Exception as e:
         return ResponseObject(False, f"Error setting rate limits: {str(e)}")
 

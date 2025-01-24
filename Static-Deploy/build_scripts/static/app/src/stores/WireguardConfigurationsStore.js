@@ -1,5 +1,5 @@
 import {defineStore} from "pinia";
-import {fetchGet} from "@/utilities/fetch.js";
+import {fetchGet, fetchPost} from "@/utilities/fetch.js";
 import isCidr from "is-cidr";
 import {GetLocale} from "@/utilities/locale.js";
 
@@ -83,7 +83,10 @@ export const WireguardConfigurationsStore = defineStore('WireguardConfigurations
 				]
 			}
 		},
-		eventSource: null
+		eventSource: null,
+		peerRateLimits: {},
+		fetchingRateLimit: false,
+		rateLimitError: null,
 	}),
 	actions: {
 		async getConfigurations(){
@@ -113,6 +116,71 @@ export const WireguardConfigurationsStore = defineStore('WireguardConfigurations
 		cleanup() {
 			if (this.eventSource) {
 				this.eventSource.close()
+			}
+		},
+		async fetchPeerRateLimit(interfaceName, peerKey) {
+			this.fetchingRateLimit = true;
+			this.rateLimitError = null;
+			
+			try {
+				await fetchGet("/api/get_peer_rate_limit", {
+					interface: interfaceName,
+					peer_key: peerKey
+				}, (response) => {
+					if (!response?.status) {
+						throw new Error(response?.message || 'Failed to fetch rate limits');
+					}
+					
+					this.peerRateLimits[peerKey] = {
+						upload_rate: response.data?.upload_rate ?? 0,
+						download_rate: response.data?.download_rate ?? 0
+					};
+				});
+			} catch (error) {
+				console.error('Fetch error:', error);
+				this.rateLimitError = error.message || 'Failed to fetch rate limits';
+				this.peerRateLimits[peerKey] = { upload_rate: 0, download_rate: 0 };
+			} finally {
+				this.fetchingRateLimit = false;
+			}
+		},
+		async setPeerRateLimit(interfaceName, peerKey, uploadRate, downloadRate) {
+			try {
+				await fetchPost("/api/set_peer_rate_limit", {
+					interface: interfaceName,
+					peer_key: peerKey,
+					upload_rate: uploadRate,
+					download_rate: downloadRate
+				}, (response) => {
+					if (response?.status) {
+						this.peerRateLimits[peerKey] = {
+							upload_rate: uploadRate,
+							download_rate: downloadRate
+						};
+						return true;
+					}
+					throw new Error(response?.message || 'Failed to set rate limits');
+				});
+			} catch (error) {
+				console.error('Request error:', error);
+				throw error;
+			}
+		},
+		async removePeerRateLimit(interfaceName, peerKey) {
+			try {
+				await fetchPost("/api/remove_peer_rate_limit", {
+					interface: interfaceName,
+					peer_key: peerKey
+				}, (response) => {
+					if (response?.status) {
+						this.peerRateLimits[peerKey] = { upload_rate: 0, download_rate: 0 };
+						return true;
+					}
+					throw new Error(response?.message || 'Failed to remove rate limit');
+				});
+			} catch (error) {
+				console.error('Request error:', error);
+				throw error;
 			}
 		}
 	}

@@ -174,6 +174,21 @@ export default {
 	mounted() {
 		
 	},
+	async created() {
+		// Fetch rate limits for all peers when the list is created
+		if (this.configurationInfo?.Name && this.configurationPeers?.length) {
+			try {
+				for (const peer of this.configurationPeers) {
+					await this.wireguardConfigurationStore.fetchPeerRateLimit(
+						this.configurationInfo.Name,
+						peer.id
+					);
+				}
+			} catch (error) {
+				console.error('Failed to fetch rate limits:', error);
+			}
+		}
+	},
 	watch: {
 		'$route': {
 			immediate: true,
@@ -192,6 +207,23 @@ export default {
 		'dashboardConfigurationStore.Configuration.Server.dashboard_refresh_interval'(){
 			clearInterval(this.dashboardConfigurationStore.Peers.RefreshInterval);
 			this.setPeerInterval();
+		},
+		// Re-fetch rate limits when peers list changes
+		configurationPeers: {
+			async handler(newPeers) {
+				if (this.configurationInfo?.Name && newPeers?.length) {
+					try {
+						for (const peer of newPeers) {
+							await this.wireguardConfigurationStore.fetchPeerRateLimit(
+								this.configurationInfo.Name,
+								peer.id
+							);
+						}
+					} catch (error) {
+						console.error('Failed to fetch rate limits:', error);
+					}
+				}
+			}
 		}
 	},
 	beforeRouteLeave(){

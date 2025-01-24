@@ -100,8 +100,7 @@
 
 <script>
 import LocaleText from "@/components/text/localeText.vue";
-import {fetchPost, fetchGet} from "@/utilities/fetch.js";
-import { DashboardConfigurationStore } from "@/stores/DashboardConfigurationStore.js"
+import { WireguardConfigurationsStore } from "@/stores/WireguardConfigurationsStore.js"
 
 export default {
   name: "PeerRateLimitSettings",
@@ -119,8 +118,8 @@ export default {
     }
   },
   setup() {
-    const dashboardStore = DashboardConfigurationStore()
-    return { dashboardStore }
+    const wireguardStore = WireguardConfigurationsStore()
+    return { wireguardStore }
   },
   data() {
     return {
@@ -174,35 +173,17 @@ export default {
     },
     
     async fetchExistingRateLimit() {
-      this.fetchingRate = true;
-      this.error = null;
-      
       try {
-        await fetchGet("/api/get_peer_rate_limit", {
-          interface: this.configurationInfo.Name,
-          peer_key: this.selectedPeer.id
-        }, (response) => {
-          console.log('Raw API Response:', response);
-          
-          if (!response?.status) {
-            throw new Error(response?.message || 'Failed to fetch rate limits');
-          }
-
-          const uploadRateKb = response.data?.upload_rate ?? 0;
-          const downloadRateKb = response.data?.download_rate ?? 0;
-          
-          [this.uploadRateValue, this.uploadRateUnit] = this.convertFromKb(uploadRateKb);
-          [this.downloadRateValue, this.downloadRateUnit] = this.convertFromKb(downloadRateKb);
-        });
+        await this.wireguardStore.fetchPeerRateLimit(
+          this.configurationInfo.Name,
+          this.selectedPeer.id
+        );
+        
+        const rateData = this.wireguardStore.peerRateLimits[this.selectedPeer.id];
+        [this.uploadRateValue, this.uploadRateUnit] = this.convertFromKb(rateData.upload_rate);
+        [this.downloadRateValue, this.downloadRateUnit] = this.convertFromKb(rateData.download_rate);
       } catch (error) {
-        console.error('Fetch error:', error);
-        this.error = error.message || 'Failed to fetch rate limits';
-        this.uploadRateValue = 0;
-        this.uploadRateUnit = 'KB';
-        this.downloadRateValue = 0;
-        this.downloadRateUnit = 'KB';
-      } finally {
-        this.fetchingRate = false;
+        this.error = error.message;
       }
     },
     
@@ -217,24 +198,17 @@ export default {
       const downloadRateKb = this.convertToKb(this.downloadRateValue, this.downloadRateUnit);
       
       try {
-        await fetchPost("/api/set_peer_rate_limit", {
-          interface: this.configurationInfo.Name,
-          peer_key: this.selectedPeer.id,
-          upload_rate: uploadRateKb,
-          download_rate: downloadRateKb
-        }, (response) => {
-          if (response && response.success) {
-            this.dashboardStore.newMessage('Server', 'Rate limits set successfully', 'success');
-            this.$emit('refresh');
-            this.$emit('close');
-          } else {
-            this.dashboardStore.newMessage('Error', response?.message || 'Failed to set rate limits', 'danger');
-          }
-        });
+        await this.wireguardStore.setPeerRateLimit(
+          this.configurationInfo.Name,
+          this.selectedPeer.id,
+          uploadRateKb,
+          downloadRateKb
+        );
+        
+        this.$emit('refresh');
+        this.$emit('close');
       } catch (error) {
-        console.error('Request error:', error);
-        this.dashboardStore.newMessage('Error', 'Network error while setting rate limits', 'danger');
-        this.error = 'Network error while setting rate limits';
+        this.error = error.message;
       } finally {
         this.loading = false;
       }
@@ -246,22 +220,15 @@ export default {
       this.isRemoving = true;
       
       try {
-        await fetchPost("/api/remove_peer_rate_limit", {
-          interface: this.configurationInfo.Name,
-          peer_key: this.selectedPeer.id
-        }, (response) => {
-          if (response && response.status) {
-            this.dashboardStore.newMessage('Server', 'Rate limit removed successfully', 'success');
-            this.$emit('refresh');
-            this.$emit('close');
-          } else {
-            this.dashboardStore.newMessage('Error', response?.message || 'Failed to remove rate limit', 'danger');
-          }
-        });
+        await this.wireguardStore.removePeerRateLimit(
+          this.configurationInfo.Name,
+          this.selectedPeer.id
+        );
+        
+        this.$emit('refresh');
+        this.$emit('close');
       } catch (error) {
-        console.error("Failed to remove rate limit:", error);
-        this.dashboardStore.newMessage('Error', 'Network error while removing rate limit', 'danger');
-        this.error = 'Network error while removing rate limit';
+        this.error = error.message;
       } finally {
         this.loading = false;
         this.isRemoving = false;

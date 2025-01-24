@@ -4,12 +4,13 @@ import { onClickOutside } from '@vueuse/core'
 import "animate.css"
 import PeerSettingsDropdown from "@/components/configurationComponents/peerSettingsDropdown.vue";
 import LocaleText from "@/components/text/localeText.vue";
-import PeerRateLimit from '@/components/configurationComponents/peerRateLimit.vue'
+import PeerRateLimitSettings from '@/components/configurationComponents/peerRateLimitSettings.vue'
+import { WireguardConfigurationsStore } from "@/stores/WireguardConfigurationsStore.js"
 
 
 export default {
 	name: "peer",
-	components: {LocaleText, PeerSettingsDropdown, PeerRateLimit},
+	components: {LocaleText, PeerSettingsDropdown, PeerRateLimitSettings},
 	emits: [
 		'share',
 		'refresh',
@@ -26,16 +27,18 @@ export default {
 	},
 	data(){
 		return {
-			showRateLimitSettings: false
+			showRateLimitSettings: false,
+			rateUnit: 'KB'
 		}
 	},
 	setup(){
 		const target = ref(null);
 		const subMenuOpened = ref(false)
+		const wireguardStore = WireguardConfigurationsStore()
 		onClickOutside(target, event => {
 			subMenuOpened.value = false;
 		});
-		return {target, subMenuOpened}
+		return {target, subMenuOpened, wireguardStore}
 	},
 	computed: {
 		getLatestHandshake(){
@@ -43,6 +46,13 @@ export default {
 				return this.Peer.latest_handshake.split(",")[0]
 			}
 			return this.Peer.latest_handshake;
+		},
+		peerRateLimit() {
+			const limits = this.wireguardStore.peerRateLimits[this.Peer.id] || { upload_rate: 0, download_rate: 0 };
+			return {
+				upload: this.convertFromKb(limits.upload_rate),
+				download: this.convertFromKb(limits.download_rate)
+			};
 		}
 	},
 	methods: {
@@ -58,6 +68,23 @@ export default {
 				type: 'error',
 				message
 			})
+		},
+		toggleRateUnit() {
+			const units = ['KB', 'MB', 'GB'];
+			const currentIndex = units.indexOf(this.rateUnit);
+			this.rateUnit = units[(currentIndex + 1) % units.length];
+		},
+		convertFromKb(rateInKb) {
+			if (!rateInKb) return '∞';
+			
+			switch (this.rateUnit) {
+				case 'GB':
+					return `${(rateInKb / (1024 * 1024)).toFixed(2)}GB/s`;
+				case 'MB':
+					return `${(rateInKb / 1024).toFixed(2)}MB/s`;
+				default:
+					return `${rateInKb}KB/s`;
+			}
 		}
 	}
 }
@@ -73,10 +100,18 @@ export default {
 					<span class="text-primary">
 						<i class="bi bi-arrow-down"></i><strong>
 						{{(Peer.cumu_receive + Peer.total_receive).toFixed(4)}}</strong> GB
+						<small class="text-muted ms-1">
+							({{ peerRateLimit.download }}<!--
+							--><template v-if="wireguardStore.peerRateLimits[Peer.id]?.download_rate">&nbsp;<i 
+							   class="bi bi-arrow-repeat" 
+							   role="button" 
+							   @click="toggleRateUnit"></i></template>)
+						</small>
 					</span>
 					<span class="text-success">
 						<i class="bi bi-arrow-up"></i><strong>
 						{{(Peer.cumu_sent + Peer.total_sent).toFixed(4)}}</strong> GB
+						<small class="text-muted ms-1">({{ peerRateLimit.upload }})</small>
 					</span>
 					<span class="text-secondary" v-if="Peer.latest_handshake !== 'No Handshake'">
 						<i class="bi bi-arrows-angle-contract"></i>
@@ -161,12 +196,12 @@ export default {
 					</button>
 				</div>
 				<div class="modal-body">
-					<PeerRateLimit 
-						:peer="Peer"
-						:interface="configurationName"
-						@success="handleRateLimitSuccess"
-						@error="handleRateLimitError"
-					></PeerRateLimit>
+					<PeerRateLimitSettings 
+						:selectedPeer="Peer"
+						:configurationInfo="{Name: configurationName}"
+						@close="showRateLimitSettings = false"
+						@refresh="$emit('refresh')"
+					></PeerRateLimitSettings>
 				</div>
 			</div>
 		</div>
@@ -200,5 +235,13 @@ export default {
 
 .modal {
 	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.bi-arrow-repeat {
+	cursor: pointer;
+	transition: transform 0.2s ease;
+}
+.bi-arrow-repeat:hover {
+	transform: rotate(180deg);
 }
 </style>
