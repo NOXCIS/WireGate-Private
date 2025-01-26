@@ -101,6 +101,7 @@
 <script>
 import LocaleText from "@/components/text/localeText.vue";
 import { WireguardConfigurationsStore } from "@/stores/WireguardConfigurationsStore.js"
+import { DashboardConfigurationStore } from "@/stores/DashboardConfigurationStore.js"
 
 export default {
   name: "PeerRateLimitSettings",
@@ -119,7 +120,8 @@ export default {
   },
   setup() {
     const wireguardStore = WireguardConfigurationsStore()
-    return { wireguardStore }
+    const dashboardStore = DashboardConfigurationStore()
+    return { wireguardStore, dashboardStore }
   },
   data() {
     return {
@@ -183,6 +185,7 @@ export default {
         [this.uploadRateValue, this.uploadRateUnit] = this.convertFromKb(rateData.upload_rate);
         [this.downloadRateValue, this.downloadRateUnit] = this.convertFromKb(rateData.download_rate);
       } catch (error) {
+        this.dashboardStore.newMessage("Error", error.message, "danger");
         this.error = error.message;
       }
     },
@@ -191,24 +194,20 @@ export default {
       if (!this.isValidRate) return;
       
       this.loading = true;
-      this.error = null;
       this.isRemoving = false;
-      
-      const uploadRateKb = this.convertToKb(this.uploadRateValue, this.uploadRateUnit);
-      const downloadRateKb = this.convertToKb(this.downloadRateValue, this.downloadRateUnit);
       
       try {
         await this.wireguardStore.setPeerRateLimit(
           this.configurationInfo.Name,
           this.selectedPeer.id,
-          uploadRateKb,
-          downloadRateKb
+          this.convertToKb(this.uploadRateValue, this.uploadRateUnit),
+          this.convertToKb(this.downloadRateValue, this.downloadRateUnit)
         );
-        
+        this.dashboardStore.newMessage("Server", "Rate limits updated successfully", "success");
         this.$emit('refresh');
         this.$emit('close');
       } catch (error) {
-        this.error = error.message;
+        this.dashboardStore.newMessage("Error", error.message, "danger");
       } finally {
         this.loading = false;
       }
@@ -216,7 +215,6 @@ export default {
     
     async removeRateLimit() {
       this.loading = true;
-      this.error = null;
       this.isRemoving = true;
       
       try {
@@ -224,11 +222,11 @@ export default {
           this.configurationInfo.Name,
           this.selectedPeer.id
         );
-        
+        this.dashboardStore.newMessage("Server", "Rate limits removed successfully", "success");
         this.$emit('refresh');
         this.$emit('close');
       } catch (error) {
-        this.error = error.message;
+        this.dashboardStore.newMessage("Error", error.message, "danger");
       } finally {
         this.loading = false;
         this.isRemoving = false;
