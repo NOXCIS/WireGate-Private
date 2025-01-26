@@ -69,17 +69,17 @@ if __name__ == "__main__":
     logger.addHandler(handler)
 
 
-    app.run(host=app_ip, debug=True, port=app_port)
+    #app.run(host=app_ip, debug=True, port=app_port)
 
     
 
     # Start the Waitress server with access logging enabled
-    #waitress.serve(
-    #    app,
-    #    host=app_ip,
-    #    port=app_port,
-    #    threads=8, 
-    #)
+    waitress.serve(
+        app,
+        host=app_ip,
+        port=app_port,
+        threads=8, 
+    )
 
     # Initialize logger 
     # Set up the rotating file handler with dynamic filename

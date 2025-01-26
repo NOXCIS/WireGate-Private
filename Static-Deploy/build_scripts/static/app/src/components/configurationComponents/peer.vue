@@ -28,7 +28,7 @@ export default {
 	data(){
 		return {
 			showRateLimitSettings: false,
-			rateUnit: 'KB'
+			rateUnit: 'Mb'
 		}
 	},
 	setup(){
@@ -70,7 +70,7 @@ export default {
 			})
 		},
 		toggleRateUnit() {
-			const units = ['KB', 'MB', 'GB'];
+			const units = ['Kb', 'Mb', 'Gb'];
 			const currentIndex = units.indexOf(this.rateUnit);
 			this.rateUnit = units[(currentIndex + 1) % units.length];
 		},
@@ -78,12 +78,12 @@ export default {
 			if (!rateInKb) return '∞';
 			
 			switch (this.rateUnit) {
-				case 'GB':
-					return `${(rateInKb / (1024 * 1024)).toFixed(2)}GB/s`;
-				case 'MB':
-					return `${(rateInKb / 1024).toFixed(2)}MB/s`;
+				case 'Gb':
+					return `${(rateInKb / (1024 * 1024)).toFixed(2)}Gb/s`;
+				case 'Mb':
+					return `${(rateInKb / 1024).toFixed(2)}Mb/s`;
 				default:
-					return `${rateInKb}KB/s`;
+					return `${rateInKb}Kb/s`;
 			}
 		}
 	}
@@ -101,17 +101,21 @@ export default {
 						<i class="bi bi-arrow-down"></i><strong>
 						{{(Peer.cumu_receive + Peer.total_receive).toFixed(4)}}</strong> GB
 						<small class="text-muted ms-1">
-							({{ peerRateLimit.download }}<!--
-							--><template v-if="wireguardStore.peerRateLimits[Peer.id]?.download_rate">&nbsp;<i 
-							   class="bi bi-arrow-repeat" 
-							   role="button" 
-							   @click="toggleRateUnit"></i></template>)
+							({{ peerRateLimit.download }}&nbsp;<i 
+							class="bi bi-arrow-repeat" 
+							role="button" 
+							@click="toggleRateUnit"></i>)
 						</small>
 					</span>
 					<span class="text-success">
 						<i class="bi bi-arrow-up"></i><strong>
 						{{(Peer.cumu_sent + Peer.total_sent).toFixed(4)}}</strong> GB
-						<small class="text-muted ms-1">({{ peerRateLimit.upload }})</small>
+						<small class="text-muted ms-1">
+							({{ peerRateLimit.upload }}&nbsp;<i 
+							class="bi bi-arrow-repeat" 
+							role="button" 
+							@click="toggleRateUnit"></i>)
+						</small>
 					</span>
 					<span class="text-secondary" v-if="Peer.latest_handshake !== 'No Handshake'">
 						<i class="bi bi-arrows-angle-contract"></i>

@@ -25,11 +25,11 @@ RUN apk add --no-cache \
 WORKDIR /build
 
 # Create directories for each Go program
-RUN mkdir -p /build/torflux /build/traffic_weir
+RUN mkdir -p /build/torflux-build /build/traffic_weir
 
 # Copy files into their respective directories
-COPY ./build_scripts/torflux/torflux.go /build/torflux/
-COPY ./build_scripts/torflux/go.mod /build/torflux/
+COPY ./build_scripts/torflux/torflux.go /build/torflux-build/
+COPY ./build_scripts/torflux/go.mod /build/torflux-build/
 COPY ./build_scripts/traffic_weir/traffic-weir.go /build/traffic_weir/
 COPY ./build_scripts/traffic_weir/go.mod /build/traffic_weir/
 COPY ./build_scripts/wiregate /build/wiregate/
@@ -49,7 +49,7 @@ RUN     venv/bin/pip install pyinstaller && \
         venv/bin/pyinstaller --clean --onefile --strip --upx-dir=/usr/bin --name vanguards vanguards.py 
 
 # Build each program from its directory
-RUN cd /build/torflux && \
+RUN cd /build/torflux-build && \
     go build -buildmode=pie -ldflags="-X main.version=v1.0.0 -s -w" -o /build/torflux
 
 RUN cd /build/traffic_weir && \

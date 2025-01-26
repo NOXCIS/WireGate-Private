@@ -21,6 +21,13 @@ export default defineConfig(({mode}) => {
 			build: {
 				target: "es2022",
 				outDir: '../../../../WGDashboard-Desktop',
+				minify: 'terser',
+				terserOptions: {
+					compress: {
+						drop_console: true,
+						drop_debugger: true
+					}
+				},
 				rollupOptions: {
 					output: {
 						entryFileNames: `assets/[name]-[hash].js`,
@@ -44,14 +51,20 @@ export default defineConfig(({mode}) => {
 		},
 		server:{
 			proxy: {
-				'/api': proxy,
-				'/fileDownload':proxy
+				'/api': proxy
 			},
 			host: '0.0.0.0'
 		},
 		build: {
 			target: "es2022",
 			outDir: 'dist',
+			minify: 'terser',
+			terserOptions: {
+				compress: {
+					drop_console: true,
+					drop_debugger: true
+				}
+			},
 			rollupOptions: {
 				output: {
 					entryFileNames: `assets/[name]-[hash].js`,

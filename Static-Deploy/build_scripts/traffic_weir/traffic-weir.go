@@ -34,8 +34,8 @@ func main() {
 
 	flag.StringVar(&iface, "interface", "", "Interface name")
 	flag.StringVar(&peer, "peer", "", "Peer ID")
-	flag.IntVar(&uploadRate, "upload-rate", 0, "Upload rate limit in KB/s")
-	flag.IntVar(&downloadRate, "download-rate", 0, "Download rate limit in KB/s")
+	flag.IntVar(&uploadRate, "upload-rate", 0, "Upload rate limit in Kb/s (kilobits per second)")
+	flag.IntVar(&downloadRate, "download-rate", 0, "Download rate limit in Kb/s (kilobits per second)")
 	flag.StringVar(&protocol, "protocol", "wg", "Protocol (wg or awg)")
 	flag.BoolVar(&remove, "remove", false, "Remove rate limits")
 	flag.Parse()
@@ -50,9 +50,8 @@ func main() {
 	}
 
 	if !remove && uploadRate == 0 && downloadRate == 0 {
-		fmt.Println("Error: at least one of upload-rate or download-rate must be specified unless -remove is used")
-		flag.Usage()
-		os.Exit(1)
+		// Remove this check since 0 is now a valid value to remove individual limits
+		// The validation is no longer needed
 	}
 
 	if protocol != "wg" && protocol != "awg" {
@@ -123,11 +122,23 @@ func main() {
 			fmt.Printf("Error creating upload rate limit class: %v\n", err)
 			os.Exit(1)
 		}
+	} else if uploadRate == 0 {
+		// Remove just the upload filter
+		if err := removeFilter(iface, peerInfo.AllowedIPs[0], true, false); err != nil {
+			fmt.Printf("Error removing upload filter: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if downloadRate > 0 {
 		if err := createClass(iface, downloadClassID, downloadRate); err != nil {
 			fmt.Printf("Error creating download rate limit class: %v\n", err)
+			os.Exit(1)
+		}
+	} else if downloadRate == 0 {
+		// Remove just the download filter
+		if err := removeFilter(iface, peerInfo.AllowedIPs[0], false, true); err != nil {
+			fmt.Printf("Error removing download filter: %v\n", err)
 			os.Exit(1)
 		}
 	}
@@ -158,18 +169,20 @@ func setupRootQdisc(iface string) error {
 }
 
 func createClass(iface, classID string, rateKbps int) error {
-	// Try to modify existing class first
+	// Convert to exact bit rate
+	rateBits := rateKbps * 1000 // Convert to bits explicitly
+
 	modifyCmd := exec.Command(tcPath, "class", "change", "dev", iface,
 		"parent", "1:", "classid", classID,
-		"htb", "rate", fmt.Sprintf("%dkbit", rateKbps),
-		"burst", "15k", "ceil", fmt.Sprintf("%dkbit", rateKbps))
+		"htb", "rate", fmt.Sprintf("%dbit", rateBits),
+		"burst", "15k", "ceil", fmt.Sprintf("%dbit", rateBits))
 
 	if err := modifyCmd.Run(); err != nil {
 		// If modification failed (class doesn't exist), create new class
 		createCmd := exec.Command(tcPath, "class", "add", "dev", iface,
 			"parent", "1:", "classid", classID,
-			"htb", "rate", fmt.Sprintf("%dkbit", rateKbps),
-			"burst", "15k", "ceil", fmt.Sprintf("%dkbit", rateKbps))
+			"htb", "rate", fmt.Sprintf("%dbit", rateBits),
+			"burst", "15k", "ceil", fmt.Sprintf("%dbit", rateBits))
 
 		output, err := createCmd.CombinedOutput()
 		if err != nil {
@@ -293,4 +306,37 @@ func peerToClassID(peer string) int {
 		hash = hash*31 + uint32(peer[i])
 	}
 	return int(hash%90) + 10 // Range 10-99 to ensure valid class IDs
+}
+
+// Add new function to remove specific filters
+func removeFilter(iface string, peer string, removeUpload bool, removeDownload bool) error {
+	ipOnly := strings.Split(peer, "/")[0]
+	protocol := "ip"
+	if strings.Contains(ipOnly, ":") {
+		protocol = "ipv6"
+	}
+
+	if removeUpload {
+		// Remove upload filter
+		cmd := exec.Command(tcPath, "filter", "del", "dev", iface,
+			"protocol", protocol, "parent", "1:", "prio", "1",
+			"u32", "match", "ip", "src", ipOnly)
+		if err := cmd.Run(); err != nil {
+			// Ignore errors if filter doesn't exist
+			fmt.Printf("Note: Upload filter removal returned: %v (this is usually safe to ignore)\n", err)
+		}
+	}
+
+	if removeDownload {
+		// Remove download filter
+		cmd := exec.Command(tcPath, "filter", "del", "dev", iface,
+			"protocol", protocol, "parent", "1:", "prio", "1",
+			"u32", "match", "ip", "dst", ipOnly)
+		if err := cmd.Run(); err != nil {
+			// Ignore errors if filter doesn't exist
+			fmt.Printf("Note: Download filter removal returned: %v (this is usually safe to ignore)\n", err)
+		}
+	}
+
+	return nil
 }

@@ -94,6 +94,11 @@ def waitressInit():
 
 
 def startThreads():
+    # Initialize rate limits from database
+    from .routes.traffic_weir_api import reinit_rate_limits
+    reinit_rate_limits()
+    
+    # Start existing background threads
     bgThread = threading.Thread(target=backGroundThread)
     bgThread.daemon = True
     bgThread.start()

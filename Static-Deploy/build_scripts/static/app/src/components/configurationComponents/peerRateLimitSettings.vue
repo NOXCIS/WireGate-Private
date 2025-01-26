@@ -35,9 +35,9 @@
                 {{ uploadRateUnit }}/s
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" @click="updateUnit('upload', 'KB')">KB/s</a></li>
-                <li><a class="dropdown-item" @click="updateUnit('upload', 'MB')">MB/s</a></li>
-                <li><a class="dropdown-item" @click="updateUnit('upload', 'GB')">GB/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('upload', 'Kb')">Kb/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('upload', 'Mb')">Mb/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('upload', 'Gb')">Gb/s</a></li>
               </ul>
             </div>
           </div>
@@ -64,9 +64,9 @@
                 {{ downloadRateUnit }}/s
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" @click="updateUnit('download', 'KB')">KB/s</a></li>
-                <li><a class="dropdown-item" @click="updateUnit('download', 'MB')">MB/s</a></li>
-                <li><a class="dropdown-item" @click="updateUnit('download', 'GB')">GB/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('download', 'Kb')">Kb/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('download', 'Mb')">Mb/s</a></li>
+                <li><a class="dropdown-item" @click="updateUnit('download', 'Gb')">Gb/s</a></li>
               </ul>
             </div>
           </div>
@@ -126,9 +126,9 @@ export default {
   data() {
     return {
       uploadRateValue: 0,
-      uploadRateUnit: 'KB',
+      uploadRateUnit: 'Mb',
       downloadRateValue: 0,
-      downloadRateUnit: 'KB',
+      downloadRateUnit: 'Mb',
       loading: false,
       error: null,
       isRemoving: false,
@@ -150,10 +150,12 @@ export default {
       const val = parseFloat(value);
       if (isNaN(val)) return '0';
       
-      switch (unit) {
+      switch (unit.toUpperCase()) {
         case 'GB':
+        case 'Gb':
           return (val * 1024 * 1024).toLocaleString();
         case 'MB':
+        case 'Mb':
           return (val * 1024).toLocaleString();
         default:
           return val.toLocaleString();
@@ -164,13 +166,15 @@ export default {
       const val = parseFloat(value);
       if (isNaN(val)) return 0;
       
-      switch (unit) {
+      switch (unit.toUpperCase()) {
         case 'GB':
-          return Math.round(val * 1024 * 1024);
+        case 'Gb':
+          return val * 1000000; // Gb to Kb (1000 * 1000)
         case 'MB':
-          return Math.round(val * 1024);
+        case 'Mb':
+          return val * 1000; // Mb to Kb (1000)
         default:
-          return Math.round(val);
+          return val; // Already in Kb
       }
     },
     
@@ -205,7 +209,6 @@ export default {
         );
         this.dashboardStore.newMessage("Server", "Rate limits updated successfully", "success");
         this.$emit('refresh');
-        this.$emit('close');
       } catch (error) {
         this.dashboardStore.newMessage("Error", error.message, "danger");
       } finally {
@@ -224,7 +227,6 @@ export default {
         );
         this.dashboardStore.newMessage("Server", "Rate limits removed successfully", "success");
         this.$emit('refresh');
-        this.$emit('close');
       } catch (error) {
         this.dashboardStore.newMessage("Error", error.message, "danger");
       } finally {
@@ -234,44 +236,45 @@ export default {
     },
     
     convertFromKb(rateInKb) {
-      if (rateInKb >= 1024 * 1024) {
-        return [(rateInKb / (1024 * 1024)).toFixed(2), 'GB'];
-      } else if (rateInKb >= 1024) {
-        return [(rateInKb / 1024).toFixed(2), 'MB'];
+      if (!rateInKb) return [0, 'Mb'];
+      
+      const kbValue = parseFloat(rateInKb);
+      if (kbValue >= 1000000) {
+        return [(kbValue / 1000000).toFixed(2), 'Gb'];
+      } else if (kbValue >= 1000) {
+        return [(kbValue / 1000).toFixed(2), 'Mb'];
       }
-      return [rateInKb, 'KB'];
+      return [kbValue.toFixed(2), 'Kb'];
     },
     
     updateUnit(direction, newUnit) {
-      const value = direction === 'upload' ? this.uploadRateValue : this.downloadRateValue;
-      const currentUnit = direction === 'upload' ? this.uploadRateUnit : this.downloadRateUnit;
-      
-      if (value) {
-        // Convert current value to KB first
-        const valueInKb = this.convertToKb(value, currentUnit);
-        
-        // Convert KB to the new unit
-        let newValue;
-        switch (newUnit) {
-          case 'GB':
-            newValue = (valueInKb / (1024 * 1024)).toFixed(2);
-            break;
-          case 'MB':
-            newValue = (valueInKb / 1024).toFixed(2);
-            break;
-          case 'KB':
-            newValue = valueInKb;
-            break;
-        }
-        
-        // Update the appropriate direction
-        if (direction === 'upload') {
-          this.uploadRateValue = newValue;
-          this.uploadRateUnit = newUnit;
-        } else {
-          this.downloadRateValue = newValue;
-          this.downloadRateUnit = newUnit;
-        }
+      const oldUnit = direction === 'upload' ? this.uploadRateUnit : this.downloadRateUnit;
+      const currentValue = direction === 'upload' ? this.uploadRateValue : this.downloadRateValue;
+
+      // Convert to Kb using precise math
+      let valueInKb = this.convertToKb(currentValue, oldUnit);
+
+      // Convert to new unit using precise math
+      let newValue;
+      switch (newUnit) {
+        case 'Gb':
+          newValue = (valueInKb / Math.pow(1024, 2)).toFixed(3);
+          break;
+        case 'Mb':
+          newValue = (valueInKb / 1024).toFixed(2);
+          break;
+        default: // Kb
+          newValue = valueInKb.toString();
+          break;
+      }
+
+      // Update state
+      if (direction === 'upload') {
+        this.uploadRateUnit = newUnit;
+        this.uploadRateValue = newValue;
+      } else {
+        this.downloadRateUnit = newUnit;
+        this.downloadRateValue = newValue;
       }
     }
   }
