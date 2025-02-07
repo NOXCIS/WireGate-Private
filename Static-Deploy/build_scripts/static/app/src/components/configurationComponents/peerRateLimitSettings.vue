@@ -208,7 +208,6 @@ export default {
           this.convertToKb(this.downloadRateValue, this.downloadRateUnit)
         );
         this.dashboardStore.newMessage("Server", "Rate limits updated successfully", "success");
-        this.$emit('refresh');
       } catch (error) {
         this.dashboardStore.newMessage("Error", error.message, "danger");
       } finally {
@@ -226,7 +225,6 @@ export default {
           this.selectedPeer.id
         );
         this.dashboardStore.newMessage("Server", "Rate limits removed successfully", "success");
-        this.$emit('refresh');
       } catch (error) {
         this.dashboardStore.newMessage("Error", error.message, "danger");
       } finally {

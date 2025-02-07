@@ -22,6 +22,34 @@ type PeerInfo struct {
 	AllowedIPs []string
 }
 
+var (
+	schedulerType = "htb" // default scheduler; will be changed to "hfsc" if supported
+)
+
+func kernelSupportsHFSC() bool {
+	// First try using modprobe, if available.
+	if mp, err := exec.LookPath("modprobe"); err == nil {
+		// Use modprobe in "dry-run" mode.
+		cmd := exec.Command(mp, "-n", "hfsc")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return false
+		}
+		// If the output indicates that HFSC is not supported, return false.
+		if strings.Contains(string(output), "not found") {
+			return false
+		}
+		return true
+	}
+	// Fallback: check /proc/modules to see if "hfsc" is present (works if hfsc is a loadable module)
+	if data, err := os.ReadFile("/proc/modules"); err == nil {
+		if strings.Contains(string(data), "hfsc") {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	var (
 		iface        string
@@ -39,6 +67,15 @@ func main() {
 	flag.StringVar(&protocol, "protocol", "wg", "Protocol (wg or awg)")
 	flag.BoolVar(&remove, "remove", false, "Remove rate limits")
 	flag.Parse()
+
+	// Determine which scheduler to use.
+	if kernelSupportsHFSC() {
+		schedulerType = "hfsc"
+		fmt.Println("HFSC is supported by the kernel. Using HFSC for traffic shaping.")
+	} else {
+		schedulerType = "htb"
+		fmt.Println("HFSC not detected. Falling back to HTB.")
+	}
 
 	fmt.Printf("Starting traffic-weir with interface=%s, peer=%s, upload-rate=%d, download-rate=%d, protocol=%s, remove=%v\n",
 		iface, peer, uploadRate, downloadRate, protocol, remove)
@@ -159,8 +196,16 @@ func main() {
 }
 
 func setupRootQdisc(iface string) error {
-	cmd := exec.Command(tcPath, "qdisc", "add", "dev", iface,
-		"root", "handle", "1:", "htb", "default", "99")
+	var cmd *exec.Cmd
+	if schedulerType == "hfsc" {
+		fmt.Println("Setting up root HFSC qdisc...")
+		cmd = exec.Command(tcPath, "qdisc", "add", "dev", iface,
+			"root", "handle", "1:", "hfsc", "default", "99")
+	} else {
+		fmt.Println("Setting up root HTB qdisc...")
+		cmd = exec.Command(tcPath, "qdisc", "add", "dev", iface,
+			"root", "handle", "1:", "htb", "default", "99")
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to add root qdisc: %v\nOutput: %s", err, output)
@@ -169,24 +214,39 @@ func setupRootQdisc(iface string) error {
 }
 
 func createClass(iface, classID string, rateKbps int) error {
-	// Convert to exact bit rate
-	rateBits := rateKbps * 1000 // Convert to bits explicitly
-
-	modifyCmd := exec.Command(tcPath, "class", "change", "dev", iface,
-		"parent", "1:", "classid", classID,
-		"htb", "rate", fmt.Sprintf("%dbit", rateBits),
-		"burst", "15k", "ceil", fmt.Sprintf("%dbit", rateBits))
-
-	if err := modifyCmd.Run(); err != nil {
-		// If modification failed (class doesn't exist), create new class
-		createCmd := exec.Command(tcPath, "class", "add", "dev", iface,
+	rateBits := rateKbps * 1000 // Convert to bits
+	if schedulerType == "hfsc" {
+		// For HFSC, use the "sc" (service curve) and "ul" (upper limit) settings.
+		modifyCmd := exec.Command(tcPath, "class", "change", "dev", iface,
+			"parent", "1:", "classid", classID,
+			"hfsc", "sc", "rate", fmt.Sprintf("%dbit", rateBits),
+			"ul", "rate", fmt.Sprintf("%dbit", rateBits))
+		if err := modifyCmd.Run(); err != nil {
+			// If modification fails (class doesn't exist), try to add it.
+			createCmd := exec.Command(tcPath, "class", "add", "dev", iface,
+				"parent", "1:", "classid", classID,
+				"hfsc", "sc", "rate", fmt.Sprintf("%dbit", rateBits),
+				"ul", "rate", fmt.Sprintf("%dbit", rateBits))
+			output, err := createCmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("failed to add hfsc traffic class: %v\nOutput: %s", err, output)
+			}
+		}
+	} else {
+		// Default to HTB settings.
+		modifyCmd := exec.Command(tcPath, "class", "change", "dev", iface,
 			"parent", "1:", "classid", classID,
 			"htb", "rate", fmt.Sprintf("%dbit", rateBits),
 			"burst", "15k", "ceil", fmt.Sprintf("%dbit", rateBits))
-
-		output, err := createCmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to add traffic class: %v\nOutput: %s", err, output)
+		if err := modifyCmd.Run(); err != nil {
+			createCmd := exec.Command(tcPath, "class", "add", "dev", iface,
+				"parent", "1:", "classid", classID,
+				"htb", "rate", fmt.Sprintf("%dbit", rateBits),
+				"burst", "15k", "ceil", fmt.Sprintf("%dbit", rateBits))
+			output, err := createCmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("failed to add htb traffic class: %v\nOutput: %s", err, output)
+			}
 		}
 	}
 	return nil

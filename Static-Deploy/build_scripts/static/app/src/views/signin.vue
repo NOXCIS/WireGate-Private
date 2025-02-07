@@ -101,7 +101,245 @@ export default {
 					}
 				});
 			}
+		},
+		initMatrixRain() {
+			const canvas = document.getElementById('matrix-rain');
+			const ctx = canvas.getContext('2d');
+
+			// Enable crisp text rendering
+			ctx.imageSmoothingEnabled = false;
+			ctx.textRendering = 'geometricPrecision';
+
+			// Configuration
+			const config = {
+				delay: 0,
+				fadeFactor: 0.05,
+				interval: 95,
+				colors: {
+					primary: '#4cd964',    // Green
+					secondary: '#33ff33',  // Bright green
+					purple: {
+						head: '#b31fff',     // Bright purple head
+						tail: '#7a0cc4'      // Original purple tail
+					},
+					orange: {
+						head: '#ff7b00',     // Bright orange head
+						tail: '#e38e41'      // Original orange tail
+					},
+					cyan: '#00ffff'        // Cyan for easter eggs
+				}
+			};
+
+			const fontSize = 14;
+			const tileSize = fontSize + 2;
+			const fontFamily = 'Consolas, monospace'; // Changed to Consolas for sharper rendering
+			let columns = [];
+
+			const getRandomStackHeight = () => {
+				const maxStackHeight = Math.ceil(canvas.height / tileSize);
+				return Math.floor(Math.random() * (maxStackHeight - 10 + 1)) + 10;
+			};
+
+			const getRandomText = () => {
+				// Easter egg words with low probability
+				const easterEggs = ['weir', 'noxis', 'james', 'wireguard', 'amnezia'];
+				const showEasterEgg = Math.random() < 0.0011; // 1% chance for easter egg
+
+				if (showEasterEgg) {
+					return {
+						word: easterEggs[Math.floor(Math.random() * easterEggs.length)],
+						isEasterEgg: true,
+						charIndex: 0
+					};
+				}
+				return {
+					char: String.fromCharCode(Math.floor(Math.random() * (126 - 33 + 1)) + 33),
+					isEasterEgg: false
+				};
+			};
+
+			const getRandomColor = () => {
+				// Distribution: 65% primary green, 15% secondary green, 10% purple, 10% orange
+				const rand = Math.random();
+				if (rand < 0.65) {
+					return {
+						color: config.colors.primary,
+						glow: '#00ff2d',
+						type: 'green'
+					};
+				} else if (rand < 0.80) {
+					return {
+						color: config.colors.secondary,
+						glow: '#33ff33',
+						type: 'green'
+					};
+				} else if (rand < 0.90) {
+					return {
+						color: config.colors.purple,
+						glow: '#b31fff',
+						type: 'purple'
+					};
+				} else {
+					return {
+						color: config.colors.orange,
+						glow: '#ff7b00',
+						type: 'orange'
+					};
+				}
+			};
+
+			const initColumns = () => {
+				columns = [];
+				for (let i = 0; i < canvas.width / tileSize; i++) {
+					const colorInfo = getRandomColor();
+					columns.push({
+						x: i * tileSize,
+						stackCounter: Math.floor(Math.random() * 50),
+						stackHeight: getRandomStackHeight(),
+						colorInfo: colorInfo,
+						intensity: 0.8 + Math.random() * 0.2,
+						headPos: 0,
+						easterEgg: null
+					});
+				}
+			};
+
+			const draw = () => {
+				ctx.font = `bold ${fontSize}px ${fontFamily}`;
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				
+				ctx.fillStyle = `rgba(0, 0, 0, ${config.fadeFactor})`;
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+				columns.forEach(column => {
+					ctx.shadowBlur = 0;
+					
+					const stackProgress = column.stackCounter / column.stackHeight;
+					let opacity = column.intensity * (1 - stackProgress * 0.3);
+					
+					let text;
+					if (column.easterEgg) {
+						// Continue displaying current easter egg word
+						text = {
+							char: column.easterEgg.word[column.easterEgg.charIndex],
+							isEasterEgg: true
+						};
+						
+						// Move to next character for next frame
+						column.easterEgg.charIndex++;
+						
+						// Reset easter egg when word is complete
+						if (column.easterEgg.charIndex >= column.easterEgg.word.length) {
+							column.easterEgg = null;
+						}
+					} else {
+						text = getRandomText();
+						if (text.isEasterEgg) {
+							// Start new easter egg word
+							column.easterEgg = {
+								word: text.word,
+								charIndex: 1  // Start at 1 since we're using first char now
+							};
+							text.char = text.word[0];  // Use first character immediately
+						}
+					}
+					
+					if (text.isEasterEgg) {
+						// Use cyan color for easter egg characters
+						ctx.shadowBlur = 2;
+						ctx.shadowColor = config.colors.cyan;
+						ctx.fillStyle = `${config.colors.cyan}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`;
+					} else if (column.colorInfo.type === 'purple' || column.colorInfo.type === 'orange') {
+						column.intensity = 0.85 + Math.sin(Date.now() * 0.005) * 0.15;
+						
+						column.headPos = column.stackCounter * tileSize;
+						const gradientLength = 8;
+						const distanceFromHead = Math.abs(column.headPos - (column.stackCounter * tileSize));
+						const headIntensity = Math.max(0, 1 - (distanceFromHead / (gradientLength * tileSize)));
+						
+						const colorType = column.colorInfo.type;
+						const headColor = config.colors[colorType].head;
+						const tailColor = config.colors[colorType].tail;
+						
+						const r = parseInt(headColor.slice(1, 3), 16) * headIntensity + parseInt(tailColor.slice(1, 3), 16) * (1 - headIntensity);
+						const g = parseInt(headColor.slice(3, 5), 16) * headIntensity + parseInt(tailColor.slice(3, 5), 16) * (1 - headIntensity);
+						const b = parseInt(headColor.slice(5, 7), 16) * headIntensity + parseInt(tailColor.slice(5, 7), 16) * (1 - headIntensity);
+						
+						const specialOpacity = opacity * (0.9 + headIntensity * 0.3);
+						
+						// Add minimal shadow only for head characters
+						if (headIntensity > 0.7) {
+							ctx.shadowBlur = 1;
+							ctx.shadowColor = column.colorInfo.type === 'purple' ? '#b31fff' : '#ff7b00';
+						}
+						
+						ctx.fillStyle = `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${specialOpacity})`;
+					} else {
+						opacity *= 0.8;
+						ctx.fillStyle = column.colorInfo.color.startsWith('#') ? 
+							`${column.colorInfo.color}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}` : 
+							column.colorInfo.color;
+					}
+
+					// Draw characters with pixel-perfect positioning
+					ctx.fillText(
+						text.char,
+						Math.round(column.x + tileSize/2),
+						Math.round(column.stackCounter * tileSize + tileSize/2)
+					);
+
+					column.stackCounter++;
+					if (column.stackCounter >= column.stackHeight) {
+						column.stackCounter = 0;
+						column.stackHeight = getRandomStackHeight();
+						const newColorInfo = getRandomColor();
+						column.colorInfo = newColorInfo;
+						column.intensity = column.colorInfo.type === 'green' ? 
+							0.8 + Math.random() * 0.2 : 
+							0.9 + Math.random() * 0.1;
+					}
+				});
+			};
+
+			// Adjust canvas for pixel-perfect rendering
+			const dpr = window.devicePixelRatio || 1;
+			const rect = canvas.getBoundingClientRect();
+			
+			canvas.width = rect.width * dpr;
+			canvas.height = rect.height * dpr;
+			canvas.style.width = `${rect.width}px`;
+			canvas.style.height = `${rect.height}px`;
+			
+			ctx.scale(dpr, dpr);
+
+			// Initialize
+			initColumns();
+
+			// Start animation
+			this.matrixInterval = setInterval(draw, config.interval);
+
+			// Handle window resize
+			window.addEventListener('resize', () => {
+				clearInterval(this.matrixInterval);
+				resizeCanvas();
+				initColumns();
+				this.matrixInterval = setInterval(draw, config.interval);
+			});
+		},
+		beforeUnmount() {
+			if (this.matrixInterval) {
+				clearInterval(this.matrixInterval);
+			}
+			window.removeEventListener('resize', this.handleResize);
 		}
+	},
+	mounted() {
+		this.initMatrixRain();
+	},
+	beforeUnmount() {
+		// Clean up any intervals when component is destroyed
+		clearInterval(this.matrixInterval);
 	}
 }
 </script>
@@ -110,6 +348,7 @@ export default {
 	<div class="container-fluid login-container-fluid d-flex main flex-column py-4 text-body h-100" 
 	     style="overflow-y: scroll"
 	     :data-bs-theme="this.theme">
+		<canvas id="matrix-rain" class="matrix-background"></canvas>
 		<div class="login-box m-auto" >
 			<div class="m-auto" style="width: 700px;">
 			
@@ -233,5 +472,23 @@ export default {
 	}
 }
 
+.matrix-background {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	z-index: 0;
+	opacity: 0.50;
+	pointer-events: none;
+}
 
+.login-box {
+	position: relative;
+	z-index: 1;
+}
+
+.messageCentre {
+	z-index: 2;
+}
 </style>
