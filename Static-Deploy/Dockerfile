@@ -8,6 +8,13 @@ RUN npm ci && npm run build
 
 # builder: WGDashboard & Vanguards Python Binary Build stage
 FROM python:alpine AS builder
+# Receive the target platform. Buildx passes this automatically.
+ARG TARGETPLATFORM
+# Specify the desired Go version.
+ARG GO_VERSION=1.23.6
+
+# Install required packages.
+# Note: Removed "go" from the list so we can install a newer version manually.
 RUN apk add --no-cache \
     py3-virtualenv \
     py3-pip \
@@ -20,7 +27,23 @@ RUN apk add --no-cache \
     rust \
     cargo \
     upx \
-    go 
+    wget
+
+# Set GO_ARCH based on TARGETPLATFORM so we download the correct binary.
+RUN set -eux; \
+    case "${TARGETPLATFORM}" in \
+        "linux/amd64") GO_ARCH="amd64" ;; \
+        "linux/arm64") GO_ARCH="arm64" ;; \
+        "linux/arm/v6" | "linux/arm/v7") GO_ARCH="armv6l" ;; \
+        *) echo "unsupported platform: ${TARGETPLATFORM}" && exit 1 ;; \
+    esac; \
+    echo "Downloading Go ${GO_VERSION} for ${GO_ARCH}"; \
+    wget https://golang.org/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz; \
+    tar -C /usr/local -xzf go${GO_VERSION}.linux-${GO_ARCH}.tar.gz; \
+    rm go${GO_VERSION}.linux-${GO_ARCH}.tar.gz
+
+# Prepend the new Go binary to PATH.
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 WORKDIR /build
 
@@ -57,7 +80,7 @@ RUN cd /build/traffic_weir && \
 
 
 # Stage 3: Final image
-FROM noxcis/hellpine:latest
+FROM alpine:latest
 LABEL maintainer="NOXCIS"
 WORKDIR /WireGate
 ENV TZ=UTC
