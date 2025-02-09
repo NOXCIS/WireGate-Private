@@ -14,12 +14,12 @@
 
 from wiregate.modules.shared import get_timestamped_filename
 from wiregate.dashboard import waitressInit, startThreads
-from wiregate.modules.models import InitWireguardConfigurationsList
+from wiregate.modules.Core import InitWireguardConfigurationsList
 from wiregate.dashboard import app, app_ip, app_port
 from logging.handlers import RotatingFileHandler
 from flask import request, g
 from time import strftime
-import time, waitress, logging
+import time, logging
 
 
 @app.before_request
@@ -52,15 +52,12 @@ def after_request(response):
     return response
 
 if __name__ == "__main__":
-   
+    print("Starting Wiregate Dashboard...", flush=True)
     InitWireguardConfigurationsList(startup=True)
     
     waitressInit()
     # Start background threads
     startThreads()
-
-    # Initialize logger 
-    # Set up the rotating file handler with dynamic filename
     log_filename = get_timestamped_filename()
     handler = RotatingFileHandler(log_filename, maxBytes=1000000, backupCount=3)
 
@@ -68,18 +65,17 @@ if __name__ == "__main__":
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
 
-
-    #app.run(host=app_ip, debug=True, port=app_port)
+    app.run(host=app_ip, debug=True, port=app_port)
 
     
 
     # Start the Waitress server with access logging enabled
-    waitress.serve(
-        app,
-        host=app_ip,
-        port=app_port,
-        threads=8, 
-    )
+    #waitress.serve(
+    #    app,
+    #    host=app_ip,
+    #    port=app_port,
+    #    threads=8, 
+    #)
 
     # Initialize logger 
     # Set up the rotating file handler with dynamic filename

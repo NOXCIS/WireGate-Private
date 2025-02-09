@@ -17,9 +17,9 @@ from ..modules.shared import (
     DASHBOARD_VERSION
 )
 
-from ..modules.models import (
+from ..modules.Core import (
     DashboardConfig,  Configuration, PeerJob, Locale, ArchiveUtils,
-    WireguardConfigurations, AllPeerShareLinks, AllPeerJobs,
+    Configurations, AllPeerShareLinks, AllPeerJobs,
     JobLogger, AllDashboardLogger, 
     InitWireguardConfigurationsList, get_backup_paths,
     APP_PREFIX,
@@ -225,7 +225,7 @@ def API_SignOut():
 def stream_config_status():
     def get_all_statuses():
         # Create a dictionary of configuration names and their status
-        return {name: config.getStatus() for name, config in WireguardConfigurations.items()}
+        return {name: config.getStatus() for name, config in Configurations.items()}
         
     def event_stream():
         while True:
@@ -240,7 +240,7 @@ def stream_config_status():
 @api_blueprint.route(f'/getConfigurations', methods=["GET"])
 def API_getConfigurations():
     InitWireguardConfigurationsList()
-    return ResponseObject(data=[wc for wc in WireguardConfigurations.values()])
+    return ResponseObject(data=[wc for wc in Configurations.values()])
 
 
 @api_blueprint.route(f'/addConfiguration', methods=["POST"])
@@ -254,7 +254,7 @@ def API_addConfiguration():
             return ResponseObject(False, "Please provide all required parameters.")
 
     # Check duplicate names, ports, address
-    for i in WireguardConfigurations.values():
+    for i in Configurations.values():
         if i.Name == data['ConfigurationName']:
             return ResponseObject(False,
                                   f"Already have a configuration with the name \"{data['ConfigurationName']}\"",
@@ -301,7 +301,7 @@ def API_addConfiguration():
 
         # Create and initialize the configuration
         try:
-            WireguardConfigurations[data['ConfigurationName']] = Configuration(
+            Configurations[data['ConfigurationName']] = Configuration(
                 name=data['ConfigurationName']
             )
         except Exception as e:
@@ -324,8 +324,8 @@ def API_addConfiguration():
                             sqlUpdate(line)
             except Exception as e:
                 # Cleanup on failure
-                WireguardConfigurations[data['ConfigurationName']].deleteConfiguration()
-                WireguardConfigurations.pop(data['ConfigurationName'])
+                Configurations[data['ConfigurationName']].deleteConfiguration()
+                Configurations.pop(data['ConfigurationName'])
                 return ResponseObject(False, f"Failed to restore database: {str(e)}")
 
         # Restore iptables scripts if they exist
@@ -351,14 +351,14 @@ def API_addConfiguration():
                         os.chmod(script_path, 0o755)
 
                         # Update configuration's corresponding attribute to point to new script
-                        setattr(WireguardConfigurations[data['ConfigurationName']],
+                        setattr(Configurations[data['ConfigurationName']],
                                 config_attr,
                                 script_path)
 
             except Exception as e:
                 # Cleanup on failure
-                WireguardConfigurations[data['ConfigurationName']].deleteConfiguration()
-                WireguardConfigurations.pop(data['ConfigurationName'])
+                Configurations[data['ConfigurationName']].deleteConfiguration()
+                Configurations.pop(data['ConfigurationName'])
                 return ResponseObject(False, f"Failed to restore iptables scripts: {str(e)}")
 
 
@@ -391,7 +391,7 @@ def API_addConfiguration():
                 data[script_type] = path
 
             # Create the configuration
-            WireguardConfigurations[config_name] = Configuration(data=data)
+            Configurations[config_name] = Configuration(data=data)
 
         except Exception as e:
             # Cleanup on failure - remove any created script files
@@ -425,10 +425,10 @@ def API_addConfiguration():
 def API_toggleConfiguration():
     configurationName = request.args.get('configurationName')
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
-    toggleStatus, msg = WireguardConfigurations[configurationName].toggleConfiguration()
-    return ResponseObject(toggleStatus, msg, WireguardConfigurations[configurationName].Status)
+    toggleStatus, msg = Configurations[configurationName].toggleConfiguration()
+    return ResponseObject(toggleStatus, msg, Configurations[configurationName].Status)
 
 
 @api_blueprint.post('/updateConfiguration')
@@ -439,12 +439,12 @@ def API_updateConfiguration():
         if i not in data.keys():
             return ResponseObject(False, "Please provide these following field: " + ", ".join(requiredKeys))
     name = data.get("Name")
-    if name not in WireguardConfigurations.keys():
+    if name not in Configurations.keys():
         return ResponseObject(False, "Configuration does not exist")
 
-    status, msg = WireguardConfigurations[name].updateConfigurationSettings(data)
+    status, msg = Configurations[name].updateConfigurationSettings(data)
 
-    return ResponseObject(status, message=msg, data=WireguardConfigurations[name])
+    return ResponseObject(status, message=msg, data=Configurations[name])
 
 
 '''
@@ -456,12 +456,12 @@ Edit Raw Config API
 def API_GetConfigurationRawFile():
     configurationName = request.args.get('configurationName')
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
     return ResponseObject(data={
-        "path": WireguardConfigurations[configurationName].configPath,
-        "content": WireguardConfigurations[configurationName].getRawConfigurationFile()
+        "path": Configurations[configurationName].configPath,
+        "content": Configurations[configurationName].getRawConfigurationFile()
     })
 
 
@@ -471,12 +471,12 @@ def API_UpdateConfigurationRawFile():
     configurationName = data.get('configurationName')
     rawConfiguration = data.get('rawConfiguration')
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
     if rawConfiguration is None or len(rawConfiguration) == 0:
         return ResponseObject(False, "Please provide content")
 
-    status, err = WireguardConfigurations[configurationName].updateRawConfigurationFile(rawConfiguration)
+    status, err = Configurations[configurationName].updateRawConfigurationFile(rawConfiguration)
 
     return ResponseObject(status=status, message=err)
 
@@ -491,10 +491,10 @@ def API_GetConfigTablesPreUp():
     data = request.get_json()
     configurationName = data.get('configurationName')
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
-    script_paths = WireguardConfigurations[configurationName].getPreUp()
+    script_paths = Configurations[configurationName].getPreUp()
 
     if not script_paths:
         return ResponseObject(False, "No PreUp scripts found")
@@ -510,7 +510,7 @@ def API_GetConfigTablesPreUp():
     return ResponseObject(data={
         "paths": script_paths,
         "contents": script_contents,
-        "raw_preup": WireguardConfigurations[configurationName].PreUp
+        "raw_preup":    Configurations[configurationName].PreUp
     })
 
 
@@ -519,10 +519,10 @@ def API_GetConfigTablesPostUp():
     data = request.get_json()
     configurationName = data.get('configurationName')
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
-    script_paths = WireguardConfigurations[configurationName].getPostUp()
+    script_paths = Configurations[configurationName].getPostUp()
 
     if not script_paths:
         return ResponseObject(False, "No PostUp scripts found")
@@ -538,7 +538,7 @@ def API_GetConfigTablesPostUp():
     return ResponseObject(data={
         "paths": script_paths,
         "contents": script_contents,
-        "raw_postup": WireguardConfigurations[configurationName].PostUp
+        "raw_postup": Configurations[configurationName].PostUp
     })
 
 
@@ -547,10 +547,10 @@ def API_GetConfigTablesPostDown():
     data = request.get_json()
     configurationName = data.get('configurationName')
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
-    script_paths = WireguardConfigurations[configurationName].getPostDown()
+    script_paths = Configurations[configurationName].getPostDown()
 
     if not script_paths:
         return ResponseObject(False, "No PostDown scripts found")
@@ -566,7 +566,7 @@ def API_GetConfigTablesPostDown():
     return ResponseObject(data={
         "paths": script_paths,
         "contents": script_contents,
-        "raw_postdown": WireguardConfigurations[configurationName].PostDown
+        "raw_postdown": Configurations[configurationName].PostDown
     })
 
 
@@ -575,10 +575,10 @@ def API_GetConfigTablesPreDown():
     data = request.get_json()
     configurationName = data.get('configurationName')
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
-    script_paths = WireguardConfigurations[configurationName].getPreDown()
+    script_paths = Configurations[configurationName].getPreDown()
 
     if not script_paths:
         return ResponseObject(False, "No PreDown scripts found")
@@ -594,7 +594,7 @@ def API_GetConfigTablesPreDown():
     return ResponseObject(data={
         "paths": script_paths,
         "contents": script_contents,
-        "raw_predown": WireguardConfigurations[configurationName].PreDown
+        "raw_predown": Configurations[configurationName].PreDown
     })
 
 
@@ -610,13 +610,13 @@ def API_UpdateConfigTablesPreUp():
     script_content = data.get('content')
 
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
     if script_content is None:
         return ResponseObject(False, "Please provide script content")
 
-    config = WireguardConfigurations[configurationName]
+    config = Configurations[configurationName]
     script_paths = config.getPreUp()
 
     if not script_paths:
@@ -642,13 +642,13 @@ def API_UpdateConfigTablesPostUp():
     script_content = data.get('content')
 
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
     if script_content is None:
         return ResponseObject(False, "Please provide script content")
 
-    config = WireguardConfigurations[configurationName]
+    config = Configurations[configurationName]
     script_paths = config.getPostUp()
 
     if not script_paths:
@@ -674,13 +674,13 @@ def API_UpdateConfigTablesPreDown():
     script_content = data.get('content')
 
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
     if script_content is None:
         return ResponseObject(False, "Please provide script content")
 
-    config = WireguardConfigurations[configurationName]
+    config = Configurations[configurationName]
     script_paths = config.getPreDown()
 
     if not script_paths:
@@ -706,13 +706,13 @@ def API_UpdateConfigTablesPostDown():
     script_content = data.get('content')
 
     if configurationName is None or len(
-            configurationName) == 0 or configurationName not in WireguardConfigurations.keys():
+            configurationName) == 0 or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide a valid configuration name")
 
     if script_content is None:
         return ResponseObject(False, "Please provide script content")
 
-    config = WireguardConfigurations[configurationName]
+    config = Configurations[configurationName]
     script_paths = config.getPostDown()
 
     if not script_paths:
@@ -734,7 +734,7 @@ def API_UpdateConfigTablesPostDown():
 @api_blueprint.post('/deleteConfiguration')
 def API_deleteWireguardConfiguration():
     data = request.get_json()
-    if "Name" not in data.keys() or data.get("Name") is None or data.get("Name") not in WireguardConfigurations.keys():
+    if "Name" not in data.keys() or data.get("Name") is None or data.get("Name") not in Configurations.keys():
         return ResponseObject(False, "Please provide the configuration name you want to delete")
 
     config_name = data.get("Name")
@@ -753,10 +753,10 @@ def API_deleteWireguardConfiguration():
             print(f"Warning: Failed to delete iptables script {script_path}: {str(e)}")
 
     # Delete the configuration
-    status = WireguardConfigurations[config_name].deleteConfiguration()
+    status = Configurations[config_name].deleteConfiguration()
 
     if status:
-        WireguardConfigurations.pop(config_name)
+        Configurations.pop(config_name)
     return ResponseObject(status)
 
 
@@ -766,13 +766,13 @@ def API_renameConfiguration():
     keys = ["Name", "NewConfigurationName"]
     for k in keys:
         if (k not in data.keys() or data.get(k) is None or len(data.get(k)) == 0 or
-                (k == "Name" and data.get(k) not in WireguardConfigurations.keys())):
+                (k == "Name" and data.get(k) not in Configurations.keys())):
             return ResponseObject(False, "Please provide the configuration name you want to rename")
 
-    status, message = WireguardConfigurations[data.get("Name")].renameConfiguration(data.get("NewConfigurationName"))
+    status, message = Configurations[data.get("Name")].renameConfiguration(data.get("NewConfigurationName"))
     if status:
-        WireguardConfigurations.pop(data.get("Name"))
-        WireguardConfigurations[data.get("NewConfigurationName")] = Configuration(data.get("NewConfigurationName"))
+        Configurations.pop(data.get("Name"))
+        Configurations[data.get("NewConfigurationName")] = Configuration(data.get("NewConfigurationName"))
     return ResponseObject(status, message)
 
 
@@ -780,9 +780,9 @@ def API_renameConfiguration():
 def API_getConfigurationBackup():
     """Get backups for a specific configuration with organized structure"""
     configurationName = request.args.get('configurationName')
-    if configurationName is None or configurationName not in WireguardConfigurations.keys():
+    if configurationName is None or configurationName not in Configurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    return ResponseObject(data=WireguardConfigurations[configurationName].getBackups())
+    return ResponseObject(data=Configurations[configurationName].getBackups())
 
 
 @api_blueprint.get('/getAllConfigurationBackup')
@@ -797,9 +797,9 @@ def API_getAllConfigurationBackup():
     backup_dir = os.path.join(DashboardConfig.GetConfig("Server", "wg_conf_path")[1], 'WGDashboard_Backup')
 
     # Handle existing configurations
-    existingConfiguration = WireguardConfigurations.keys()
+    existingConfiguration = Configurations.keys()
     for config_name in existingConfiguration:
-        backups = WireguardConfigurations[config_name].getBackups(True)
+        backups = Configurations[config_name].getBackups(True)
         if backups:
             data['ExistingConfigurations'][config_name] = backups
 
@@ -849,13 +849,13 @@ def API_getAllConfigurationBackup():
 def API_createConfigurationBackup():
     """Create a backup for a specific configuration using organized structure"""
     configurationName = request.args.get('configurationName')
-    if configurationName is None or configurationName not in WireguardConfigurations.keys():
+    if configurationName is None or configurationName not in Configurations.keys():
         return ResponseObject(False, "Configuration does not exist")
 
-    success = WireguardConfigurations[configurationName].backupConfigurationFile()
+    success = Configurations[configurationName].backupConfigurationFile()
     return ResponseObject(
         status=success,
-        data=WireguardConfigurations[configurationName].getBackups() if success else None
+        data=Configurations[configurationName].getBackups() if success else None
     )
 
 
@@ -951,8 +951,8 @@ def API_restoreConfigurationBackup():
                     return ResponseObject(False, f"Invalid backup archive: {error_msg}")
 
                 # Create configuration if it doesn't exist
-                if configuration_name not in WireguardConfigurations.keys():
-                    WireguardConfigurations[configuration_name] = Configuration(configuration_name)
+                if configuration_name not in Configurations.keys():
+                    Configurations[configuration_name] = Configuration(configuration_name)
 
                 # Get backup paths for the configuration
                 backup_paths = get_backup_paths(configuration_name)
@@ -979,10 +979,10 @@ def API_restoreConfigurationBackup():
 
             else:
                 # Handle native backup restore
-                if configuration_name not in WireguardConfigurations.keys():
+                if configuration_name not in Configurations.keys():
                     return ResponseObject(False, "Configuration does not exist")
 
-                success = WireguardConfigurations[configuration_name].restoreBackup(backup_file_name)
+                success = Configurations[configuration_name].restoreBackup(backup_file_name)
                 if not success:
                     return ResponseObject(False, "Failed to restore backup")
 
@@ -1146,7 +1146,7 @@ def API_updateDashboardConfigurationItem():
 
     if data['section'] == "Server":
         if data['key'] == 'wg_conf_path':
-            WireguardConfigurations.clear()
+            Configurations.clear()
             InitWireguardConfigurationsList()
 
     return ResponseObject(True, data=DashboardConfig.GetConfig(data["section"], data["key"])[1])
@@ -1190,7 +1190,7 @@ def API_deleteDashboardAPIKey():
 def API_updatePeerSettings(configName):
     data = request.get_json()
     id = data['id']
-    if len(id) > 0 and configName in WireguardConfigurations.keys():
+    if len(id) > 0 and configName in Configurations.keys():
         name = data['name']
         private_key = data['private_key']
         dns_addresses = data['DNS']
@@ -1199,7 +1199,7 @@ def API_updatePeerSettings(configName):
         preshared_key = data['preshared_key']
         mtu = data['mtu']
         keepalive = data['keepalive']
-        wireguardConfig = WireguardConfigurations[configName]
+        wireguardConfig = Configurations[configName]
         foundPeer, peer = wireguardConfig.searchPeer(id)
         if foundPeer:
             return peer.updatePeer(name, private_key, preshared_key, dns_addresses,
@@ -1212,9 +1212,9 @@ def API_resetPeerData(configName):
     data = request.get_json()
     id = data['id']
     type = data['type']
-    if len(id) == 0 or configName not in WireguardConfigurations.keys():
+    if len(id) == 0 or configName not in Configurations.keys():
         return ResponseObject(False, "Configuration/Peer does not exist")
-    wgc = WireguardConfigurations.get(configName)
+    wgc = Configurations.get(configName)
     foundPeer, peer = wgc.searchPeer(id)
     if not foundPeer:
         return ResponseObject(False, "Configuration/Peer does not exist")
@@ -1225,10 +1225,10 @@ def API_resetPeerData(configName):
 def API_deletePeers(configName: str) -> ResponseObject:
     data = request.get_json()
     peers = data['peers']
-    if configName in WireguardConfigurations.keys():
+    if configName in Configurations.keys():
         if len(peers) == 0:
             return ResponseObject(False, "Please specify one or more peers")
-        configuration = WireguardConfigurations.get(configName)
+        configuration = Configurations.get(configName)
         return configuration.deletePeers(peers)
 
     return ResponseObject(False, "Configuration does not exist")
@@ -1238,10 +1238,10 @@ def API_deletePeers(configName: str) -> ResponseObject:
 def API_restrictPeers(configName: str) -> ResponseObject:
     data = request.get_json()
     peers = data['peers']
-    if configName in WireguardConfigurations.keys():
+    if configName in Configurations.keys():
         if len(peers) == 0:
             return ResponseObject(False, "Please specify one or more peers")
-        configuration = WireguardConfigurations.get(configName)
+        configuration = Configurations.get(configName)
         return configuration.restrictPeers(peers)
     return ResponseObject(False, "Configuration does not exist")
 
@@ -1294,9 +1294,9 @@ def API_sharePeer_get():
     if len(link) == 0:
         return ResponseObject(False, "This link is either expired to invalid")
     l = link[0]
-    if l.Configuration not in WireguardConfigurations.keys():
+    if l.Configuration not in Configurations.keys():
         return ResponseObject(False, "The peer you're looking for does not exist")
-    c = WireguardConfigurations.get(l.Configuration)
+    c = Configurations.get(l.Configuration)
     fp, p = c.searchPeer(l.Peer)
     if not fp:
         return ResponseObject(False, "The peer you're looking for does not exist")
@@ -1308,17 +1308,17 @@ def API_sharePeer_get():
 def API_allowAccessPeers(configName: str) -> ResponseObject:
     data = request.get_json()
     peers = data['peers']
-    if configName in WireguardConfigurations.keys():
+    if configName in Configurations.keys():
         if len(peers) == 0:
             return ResponseObject(False, "Please specify one or more peers")
-        configuration = WireguardConfigurations.get(configName)
+        configuration = Configurations.get(configName)
         return configuration.allowAccessPeers(peers)
     return ResponseObject(False, "Configuration does not exist")
 
 
 @api_blueprint.post('/addPeers/<configName>')
 def API_addPeers(configName):
-    if configName in WireguardConfigurations.keys():
+    if configName in Configurations.keys():
         try:
             data: dict = request.get_json()
 
@@ -1344,7 +1344,7 @@ def API_addPeers(configName):
                 dns_addresses = DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1]
             if len(endpoint_allowed_ip) == 0:
                 endpoint_allowed_ip = DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[1]
-            config = WireguardConfigurations.get(configName)
+            config = Configurations.get(configName)
             if not bulkAdd and (len(public_key) == 0 or len(allowed_ips) == 0):
                 return ResponseObject(False, "Please provide at least public_key and allowed_ips")
             if not config.getStatus():
@@ -1414,9 +1414,9 @@ def API_addPeers(configName):
 @api_blueprint.get("/downloadPeer/<configName>")
 def API_downloadPeer(configName):
     data = request.args
-    if configName not in WireguardConfigurations.keys():
+    if configName not in Configurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    configuration = WireguardConfigurations[configName]
+    configuration = Configurations[configName]
     peerFound, peer = configuration.searchPeer(data['id'])
     if len(data['id']) == 0 or not peerFound:
         return ResponseObject(False, "Peer does not exist")
@@ -1424,9 +1424,9 @@ def API_downloadPeer(configName):
 
 @api_blueprint.get("/downloadAllPeers/<configName>")
 def API_downloadAllPeers(configName):
-    if configName not in WireguardConfigurations.keys():
+    if configName not in Configurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    configuration = WireguardConfigurations[configName]
+    configuration = Configurations[configName]
     peerData = []
     untitledPeer = 0
     for i in configuration.Peers:
@@ -1439,20 +1439,20 @@ def API_downloadAllPeers(configName):
 
 @api_blueprint.get("/getAvailableIPs/<configName>")
 def API_getAvailableIPs(configName):
-    if configName not in WireguardConfigurations.keys():
+    if configName not in Configurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    status, ips = WireguardConfigurations.get(configName).getAvailableIP()
+    status, ips = Configurations.get(configName).getAvailableIP()
     return ResponseObject(status=status, data=ips)
 
 @api_blueprint.get('/getWireguardConfigurationInfo')
 def API_getConfigurationInfo():
     configurationName = request.args.get("configurationName")
-    if not configurationName or configurationName not in WireguardConfigurations.keys():
+    if not configurationName or configurationName not in Configurations.keys():
         return ResponseObject(False, "Please provide configuration name")
     return ResponseObject(data={
-        "configurationInfo": WireguardConfigurations[configurationName],
-        "configurationPeers": WireguardConfigurations[configurationName].getPeersList(),
-        "configurationRestrictedPeers": WireguardConfigurations[configurationName].getRestrictedPeersList()
+        "configurationInfo": Configurations[configurationName],
+        "configurationPeers": Configurations[configurationName].getPeersList(),
+        "configurationRestrictedPeers": Configurations[configurationName].getRestrictedPeersList()
     })
 
 @api_blueprint.get('/getDashboardTheme')
@@ -1558,7 +1558,7 @@ def API_savePeerScheduleJob():
     print("[DEBUG] Validation completed successfully")
     if "Peer" not in job.keys() or "Configuration" not in job.keys():
         return ResponseObject(False, "Please specify peer and configuration")
-    configuration = WireguardConfigurations.get(job['Configuration'])
+    configuration = Configurations.get(job['Configuration'])
     f, fp = configuration.searchPeer(job['Peer'])
     if not f:
         return ResponseObject(False, "Peer does not exist")
@@ -1578,7 +1578,7 @@ def API_deletePeerScheduleJob():
     job: dict = data['Job']
     if "Peer" not in job.keys() or "Configuration" not in job.keys():
         return ResponseObject(False, "Please specify peer and configuration")
-    configuration = WireguardConfigurations.get(job['Configuration'])
+    configuration = Configurations.get(job['Configuration'])
     f, fp = configuration.searchPeer(job['Peer'])
     if not f:
         return ResponseObject(False, "Peer does not exist")
@@ -1592,7 +1592,7 @@ def API_deletePeerScheduleJob():
 
 @api_blueprint.get('/getPeerScheduleJobLogs/<configName>')
 def API_getPeerScheduleJobLogs(configName):
-    if configName not in WireguardConfigurations.keys():
+    if configName not in Configurations.keys():
         return ResponseObject(False, "Configuration does not exist")
     data = request.args.get("requestAll")
     requestAll = False
@@ -1609,7 +1609,7 @@ Tools
 @api_blueprint.get('/ping/getAllPeersIpAddress')
 def API_ping_getAllPeersIpAddress():
     ips = {}
-    for c in WireguardConfigurations.values():
+    for c in Configurations.values():
         cips = {}
         for p in c.Peers:
             allowed_ip = p.allowed_ip.replace(" ", "").split(",")
@@ -2031,12 +2031,12 @@ def index():
 
 
 def backGroundThread():
-    global WireguardConfigurations
+    global Configurations
     print(f"[WGDashboard] Background Thread #1 Started", flush=True)
     time.sleep(10)
     while True:
         with app.app_context():
-            for c in WireguardConfigurations.values():
+            for c in Configurations.values():
                 if c.getStatus():
                     try:
                         c.getPeersTransfer()

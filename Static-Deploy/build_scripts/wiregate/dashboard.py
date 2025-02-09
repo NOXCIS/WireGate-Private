@@ -10,10 +10,13 @@ from flask.json.provider import DefaultJSONProvider
 from .modules.shared import (
     app
 )
+from .modules.Log import Log
 
-from .modules.models import (
+
+from .modules.Core import (
+
     DashboardAPIKey, DashboardConfig, PeerShareLink,
-    PeerJob, Log, Configuration, Peer, APP_PREFIX
+    PeerJob, Configuration, Peer, APP_PREFIX
 
 )
 
@@ -55,7 +58,7 @@ from .routes.api import api_blueprint
 from .routes.tor_api import tor_blueprint
 from .routes.api import backGroundThread, peerJobScheduleBackgroundThread
 from .routes.traffic_weir_api import traffic_weir_blueprint
-
+from .routes.email_api import email_blueprint
 # Initialize logger
 # Set up the rotating file handler with dynamic filename
 #log_filename = get_timestamped_filename()
@@ -78,6 +81,7 @@ from .routes.traffic_weir_api import traffic_weir_blueprint
 
 app.register_blueprint(api_blueprint, url_prefix=f'{APP_PREFIX}/api')
 app.register_blueprint(tor_blueprint, url_prefix=f'{APP_PREFIX}/api')
+app.register_blueprint(email_blueprint, url_prefix=f'{APP_PREFIX}/api')
 app.register_blueprint(traffic_weir_blueprint, url_prefix=f'{APP_PREFIX}/api')
 
 
@@ -94,11 +98,6 @@ def waitressInit():
 
 
 def startThreads():
-    # Initialize rate limits from database
-    from .routes.traffic_weir_api import reinit_rate_limits
-    reinit_rate_limits()
-    
-    # Start existing background threads
     bgThread = threading.Thread(target=backGroundThread)
     bgThread.daemon = True
     bgThread.start()

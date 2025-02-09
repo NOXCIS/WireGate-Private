@@ -37,6 +37,13 @@ from . shared import (
 )
 
 
+from .Email import EmailSender
+from .Log import Log
+from .DashboardLogger import DashboardLogger
+from .PeerJobLogger import PeerJobLogger
+from .PeerJob import PeerJob
+
+
 def get_backup_paths(config_name: str, backup_timestamp: str = None) -> dict:
     """
     Get organized backup file paths for a configuration
@@ -1428,7 +1435,7 @@ class Configuration:
         return True
 
     def renameConfiguration(self, newConfigurationName) -> tuple[bool, str]:
-        if newConfigurationName in WireguardConfigurations.keys():
+        if newConfigurationName in Configurations.keys():
             return False, "Configuration name already exist"
         try:
             if self.getStatus():
@@ -1484,9 +1491,6 @@ class Configuration:
                         if network.version == 6 and count > 255:
                             break
         return True, availableAddress
-    
-    
-
 
 class Peer:
     def __init__(self, tableData, configuration: Configuration):
@@ -1855,140 +1859,6 @@ class DashboardConfig:
                     the_dict[section][key] = self.GetConfig(section, key)[1]
         return the_dict
 
-class Log:
-    def __init__(self, LogID: str, JobID: str, LogDate: str, Status: str, Message: str):
-        self.LogID = LogID
-        self.JobID = JobID
-        self.LogDate = LogDate
-        self.Status = Status
-        self.Message = Message
-
-    def toJson(self):
-        return {
-            "LogID": self.LogID,
-            "JobID": self.JobID,
-            "LogDate": self.LogDate,
-            "Status": self.Status,
-            "Message": self.Message
-        }
-
-    def __dict__(self):
-        return self.toJson()
-
-class DashboardLogger:
-    def __init__(self):
-        self.loggerdb = sqlite3.connect(os.path.join(CONFIGURATION_PATH, 'db', 'wgdashboard_log.db'),
-                                        check_same_thread=False)
-        self.loggerdb.row_factory = sqlite3.Row
-        self.__createLogDatabase()
-        self.log(Message="WGDashboard started")
-
-    def __createLogDatabase(self):
-        with self.loggerdb:
-            loggerdbCursor = self.loggerdb.cursor()
-            existingTable = loggerdbCursor.execute("SELECT name from sqlite_master where type='table'").fetchall()
-            existingTable = [t['name'] for t in existingTable]
-            if "DashboardLog" not in existingTable:
-                loggerdbCursor.execute(
-                    "CREATE TABLE DashboardLog (LogID VARCHAR NOT NULL, LogDate DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now', 'localtime')), URL VARCHAR, IP VARCHAR, Status VARCHAR, Message VARCHAR, PRIMARY KEY (LogID))")
-            if self.loggerdb.in_transaction:
-                self.loggerdb.commit()
-
-    def log(self, URL: str = "", IP: str = "", Status: str = "true", Message: str = "") -> bool:
-        pass
-        try:
-            with self.loggerdb:
-                loggerdbCursor = self.loggerdb.cursor()
-                loggerdbCursor.execute(
-                    "INSERT INTO DashboardLog (LogID, URL, IP, Status, Message) VALUES (?, ?, ?, ?, ?)",
-                    (str(uuid.uuid4()), URL, IP, Status, Message,))
-                if self.loggerdb.in_transaction:
-                    self.loggerdb.commit()
-                return True
-        except Exception as e:
-            print(f"[WGDashboard] Access Log Error: {str(e)}")
-            return False
-
-class PeerJobLogger:
-    def __init__(self):
-        self.loggerdb = sqlite3.connect(os.path.join(CONFIGURATION_PATH, 'db', 'wgdashboard_log.db'),
-                                        check_same_thread=False)
-        self.loggerdb.row_factory = sqlite3.Row
-        self.logs: List[Log] = []
-        self.__createLogDatabase()
-
-    def __createLogDatabase(self):
-        with self.loggerdb:
-            loggerdbCursor = self.loggerdb.cursor()
-
-            existingTable = loggerdbCursor.execute("SELECT name from sqlite_master where type='table'").fetchall()
-            existingTable = [t['name'] for t in existingTable]
-
-            if "JobLog" not in existingTable:
-                loggerdbCursor.execute(
-                    "CREATE TABLE JobLog (LogID VARCHAR NOT NULL, JobID NOT NULL, LogDate DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now', 'localtime')), Status VARCHAR NOT NULL, Message VARCHAR, PRIMARY KEY (LogID))")
-                if self.loggerdb.in_transaction:
-                    self.loggerdb.commit()
-
-    def log(self, JobID: str, Status: bool = True, Message: str = "") -> bool:
-        try:
-            with self.loggerdb:
-                loggerdbCursor = self.loggerdb.cursor()
-                loggerdbCursor.execute(f"INSERT INTO JobLog (LogID, JobID, Status, Message) VALUES (?, ?, ?, ?)",
-                                       (str(uuid.uuid4()), JobID, Status, Message,))
-                if self.loggerdb.in_transaction:
-                    self.loggerdb.commit()
-        except Exception as e:
-            print(f"[WGDashboard] Peer Job Log Error: {str(e)}")
-            return False
-        return True
-
-    def getLogs(self, all: bool = False, configName=None) -> list[Log]:
-        logs: list[Log] = []
-        try:
-            allJobs = AllPeerJobs.getAllJobs(configName)
-            allJobsID = ", ".join([f"'{x.JobID}'" for x in allJobs])
-            with self.loggerdb:
-                loggerdbCursor = self.loggerdb.cursor()
-                table = loggerdbCursor.execute(
-                    f"SELECT * FROM JobLog WHERE JobID IN ({allJobsID}) ORDER BY LogDate DESC").fetchall()
-                self.logs.clear()
-                for l in table:
-                    logs.append(
-                        Log(l["LogID"], l["JobID"], l["LogDate"], l["Status"], l["Message"]))
-        except Exception as e:
-            return logs
-        return logs
-
-class PeerJob:
-    def __init__(self, JobID: str, Configuration: str, Peer: str,
-                 Field: str, Operator: str, Value: str, CreationDate: datetime, ExpireDate: datetime, Action: str):
-        self.Action = Action
-        self.ExpireDate = ExpireDate
-        self.CreationDate = CreationDate
-        self.Value = Value
-        self.Operator = Operator
-        self.Field = Field
-        self.Configuration = Configuration
-        self.Peer = Peer
-        self.JobID = JobID
-
-    def toJson(self):
-        return {
-            "JobID": self.JobID,
-            "Configuration": self.Configuration,
-            "Peer": self.Peer,
-            "Field": self.Field,
-            "Operator": self.Operator,
-            "Value": self.Value,
-            "CreationDate": self.CreationDate,
-            "ExpireDate": self.ExpireDate,
-            "Action": self.Action
-        }
-
-    def __dict__(self):
-        return self.toJson()
-
 class PeerJobs:
 
     def __init__(self):
@@ -2106,7 +1976,7 @@ class PeerJobs:
     def runJob(self):
         needToDelete = []
         for job in self.Jobs:
-            c = WireguardConfigurations.get(job.Configuration)
+            c = Configurations.get(job.Configuration)
             if c is not None:
                 if job.Field == "weekly":
                     current_time = datetime.now()
@@ -2463,6 +2333,7 @@ class Locale:
 
 
 _, APP_PREFIX = DashboardConfig().GetConfig("Server", "app_prefix")
+EmailSender = EmailSender(DashboardConfig)
 DashboardConfig = DashboardConfig()
 
 def InitWireguardConfigurationsList(startup: bool = False):
@@ -2472,18 +2343,18 @@ def InitWireguardConfigurationsList(startup: bool = False):
         if RegexMatch("^(.{1,}).(conf)$", i):
             i = i.replace('.conf', '')
             try:
-                if i in WireguardConfigurations.keys():
-                    if WireguardConfigurations[i].configurationFileChanged():
-                        WireguardConfigurations[i] = Configuration(i)
+                if i in Configurations.keys():
+                    if Configurations[i].configurationFileChanged():
+                        Configurations[i] = Configuration(i)
                 else:
-                    WireguardConfigurations[i] = Configuration(i, startup=startup)
+                    Configurations[i] = Configuration(i, startup=startup)
             except Configuration.InvalidConfigurationFileException as e:
                 print(f"{i} have an invalid configuration file.")
 
 
 
 # Initialize shared instances
-WireguardConfigurations: dict[str, Configuration] = {}
+Configurations: dict[str, Configuration] = {}
 JobLogger: PeerJobLogger = PeerJobLogger()
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()

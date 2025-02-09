@@ -1,7 +1,7 @@
 from flask import Blueprint, request
 import subprocess
 from ..modules.shared import ResponseObject
-from ..modules.models import WireguardConfigurations
+from ..modules.Core import Configurations
 from ..modules.shared import sqlSelect, sqlUpdate
 from urllib.parse import unquote
 
@@ -20,7 +20,7 @@ def set_peer_rate_limit():
     
     try:
         # Get configuration object for the interface
-        config = WireguardConfigurations.get(data['interface'])
+        config = Configurations.get(data['interface'])
         if not config:
             return ResponseObject(False, f"Interface {data['interface']} not found")
         
@@ -29,7 +29,7 @@ def set_peer_rate_limit():
         if not found:
             return ResponseObject(False, f"Peer {data['peer_key']} not found in interface {config.Name}")
         
-        # Validate rates are positive numbers and convert to KB/s
+        # Validate rates are positive numbers and convert to integer
         try:
             upload_rate = int(float(data['upload_rate']))
             download_rate = int(float(data['download_rate']))
@@ -46,11 +46,7 @@ def set_peer_rate_limit():
         # Store rates as integers in database
         sqlUpdate(
             "UPDATE '%s' SET upload_rate_limit = ?, download_rate_limit = ? WHERE id = ?" % config.Name,
-            (
-                None if upload_rate == 0 else upload_rate,
-                None if download_rate == 0 else download_rate,
-                peer.id
-            )
+            (upload_rate, download_rate, peer.id)
         )
         
         # Execute traffic-weir command with both rates
@@ -91,7 +87,7 @@ def get_peer_rate_limit():
     
     try:
         # Get configuration object for the interface
-        config = WireguardConfigurations.get(interface)
+        config = Configurations.get(interface)
         if not config:
             return ResponseObject(False, f"Interface {interface} not found")
         
@@ -111,13 +107,13 @@ def get_peer_rate_limit():
         db_upload_rate = db_upload_rate or 0
         db_download_rate = db_download_rate or 0
 
-        # Return raw KB/s values without conversion
+        # Return in the format expected by the frontend
         return ResponseObject(
             status=True,
             message="Rate limits retrieved successfully",
             data={
-                "upload_rate": float(db_upload_rate or 0),
-                "download_rate": float(db_download_rate or 0)
+                "upload_rate": float(db_upload_rate),
+                "download_rate": float(db_download_rate)
             }
         )
         
@@ -136,7 +132,7 @@ def remove_peer_rate_limit():
     
     try:
         # Get configuration object for the interface
-        config = WireguardConfigurations.get(data['interface'])
+        config = Configurations.get(data['interface'])
         if not config:
             return ResponseObject(False, f"Interface {data['interface']} not found")
         
@@ -174,43 +170,3 @@ def remove_peer_rate_limit():
         
     except Exception as e:
         return ResponseObject(False, f"Error removing rate limits: {str(e)}")
-
-def reinit_rate_limits():
-    """Reinitialize rate limits from database for all peers on server restart"""
-    try:
-        # Get all configurations
-        configs = WireguardConfigurations.getAll()
-        for config in configs:
-            # Get protocol for this interface
-            protocol = config.get_iface_proto()
-            if protocol not in ["wg", "awg"]:
-                continue
-                
-            # Get all peers with rate limits for this interface
-            rate_limit_results = sqlSelect(
-                "SELECT id, upload_rate_limit, download_rate_limit FROM '%s' WHERE upload_rate_limit IS NOT NULL OR download_rate_limit IS NOT NULL" % config.Name
-            ).fetchall()
-            
-            for result in rate_limit_results:
-                upload_rate = result['upload_rate_limit'] or 0
-                download_rate = result['download_rate_limit'] or 0
-                
-                # Skip if both rates are 0
-                if upload_rate == 0 and download_rate == 0:
-                    continue
-                    
-                # Execute traffic-weir command to set rates
-                cmd = [
-                    './traffic-weir',
-                    '-interface', config.Name,
-                    '-peer', result['id'],
-                    '-upload-rate', str(upload_rate),
-                    '-download-rate', str(download_rate),
-                    '-protocol', protocol
-                ]
-                subprocess.run(cmd, capture_output=True, text=True)
-                
-        return True
-    except Exception as e:
-        print(f"Error reinitializing rate limits: {str(e)}")
-        return False
